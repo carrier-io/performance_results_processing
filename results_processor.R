@@ -115,28 +115,28 @@ results_csv_name = glue("/tmp/{build_id}.csv")
 ts <- Sys.time()
 original_results_csv <- fread(results_csv_name, select = c("time", "request_name", "method", "response_time", "status", "status_code"))
 difftime(Sys.time(), ts)
+records_count = nrow(original_results_csv)
 
-print("aggregate_results ---------->")
 ts <- Sys.time()
 
 aggregate_results(original_results_csv, 600, "10m")
 aggregate_results(original_results_csv, 300, "5m")
 aggregate_results(original_results_csv, 60, "1m")
-#aggregate_results(original_results_csv, 30, "30s")
-#aggregate_results(original_results_csv, 5, "5s")
-#aggregate_results(original_results_csv, 1, "1s")
+if (records_count < 100000000) {
+  aggregate_results(original_results_csv, 30, "30s")
+}
+if (records_count < 50000000) {
+  aggregate_results(original_results_csv, 5, "5s")
+}
+if (records_count < 5000000) {
+  aggregate_results(original_results_csv, 1, "1s")
+}
 
 difftime(Sys.time(), ts)
 
 
 get_response_times(original_results_csv)
-
 get_comparison_data(original_results_csv)
-print("Comparison and response times ----------->")
-difftime(Sys.time(), ts)
-records_count = nrow(original_results_csv)
-print("records_count ------------>")
-print(records_count)
 rm(original_results_csv)
 
 print("Read users ----------->")
@@ -147,9 +147,15 @@ difftime(Sys.time(), ts)
 
 print("aggregate_users -------->")
 ts <- Sys.time()
-#aggregate_users(original_users_csv, 1, "1s")
-#aggregate_users(original_users_csv, 5, "5s")
-#aggregate_users(original_users_csv, 30, "30s")
+if (records_count < 100000000) {
+  aggregate_users(original_users_csv, 1, "1s")
+}
+if (records_count < 50000000) {
+  aggregate_users(original_users_csv, 5, "5s")
+}
+if (records_count < 5000000) {
+  aggregate_users(original_users_csv, 30, "30s")
+}
 aggregate_users(original_users_csv, 60, "1m")
 aggregate_users(original_users_csv, 300, "5m")
 aggregate_users(original_users_csv, 600, "10m")

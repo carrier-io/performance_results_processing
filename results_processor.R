@@ -1,5 +1,3 @@
-print("Started. Pause 1 seconds")
-Sys.sleep(1)
 total_time <- Sys.time()
 library("data.table")
 library("readr")
@@ -10,8 +8,6 @@ library(httr)
 library(glue)
 
 build_id = Sys.getenv("build_id")
-print("Hello from R")
-print(build_id)
 base_url = Sys.getenv("base_url")
 project_id = Sys.getenv("project_id")
 bucket = Sys.getenv("bucket")
@@ -21,7 +17,6 @@ aggregate_results <- function(original_results_csv, aggregation, aggregation_suf
   lts <- Sys.time()
   print(aggregation_suffix)
   aggregatedCSV <- mutate(original_results_csv, interval=as.integer(time) %/% aggregation )
-  print("aggregated")
   difftime(Sys.time(), lts)
   results <- aggregatedCSV %>%
   dplyr::group_by(request_name = aggregatedCSV$request_name, method = aggregatedCSV$method, status = aggregatedCSV$status, group = aggregatedCSV$interval) %>%
@@ -40,7 +35,6 @@ aggregate_results <- function(original_results_csv, aggregation, aggregation_suf
                    "5xx"=sum(startsWith(as.character(status_code), "5")),
                    "NaN"=sum(is.nan(status_code)))
 
-  #results <- dplyr::select(results, -c(group))
   results = results[,c(5,1,2,3,6,7,8,9,10,11,12,13,14,15,16,17,18)]
   file_name = glue("/tmp/{build_id}_{aggregation_suffix}.csv")
   write.csv(results, file_name, row.names = FALSE, fileEncoding = "UTF-8", quote = FALSE, eol = "\n")
@@ -48,7 +42,6 @@ aggregate_results <- function(original_results_csv, aggregation, aggregation_suf
   url = glue("{base_url}/api/v1/artifacts/artifacts/{project_id}/{bucket}")
   r = POST(url, body = list("file" = upload_file(glue("{file_name}.gz"))), add_headers("Authorization" = glue("Bearer {token}")))
   rm(results)
-  print("done")
   difftime(Sys.time(), lts)
 }
 

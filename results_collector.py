@@ -30,46 +30,13 @@ headers = {'Authorization': f'bearer {token}'}
 def get_args():
     r = requests.get(f'{base_url}/api/v1/backend_performance/reports/{project_id}?report_id={report_id}',
                      headers={**headers, 'Content-type': 'application/json'}).json()
-    print("report json **************")
-    print(r)
-    args = {
-        'base_url': base_url,
-        'project_id': project_id,
-        'token': token,
-        'type': r['type'],
-        'simulation': r['name'],
-        'build_id': r['build_id'],
-        'report_id': report_id,
-        'env': r['environment'],
-        'comparison_metric': 'pct95',
-        'test_limit': 5
-    }
-
-    # url = f"{base_url}/api/v1/backend_performance/test/{project_id}/{r['test_uid']}"
-    # data = {
-    #     "params": {},
-    #     "type": "config"
-    # }
-    # test_config = requests.post(url, json=data, headers={**headers, 'Content-type': 'application/json'})
-    # try:
-    #     test_config = test_config.json()
-    # except Exception as exc:
-    #     print(test_config.text)
-    #     raise exc
-    # print("test config *****************")
-    # print(test_config)
-    # exec_params = loads(test_config["execution_params"])
-    print("test_parameters **************")
-    print(exec_params)
-    args["influx_host"] = exec_params["influxdb_host"]
-    args["influx_port"] = "8086"
-    args["influx_user"] = exec_params["influxdb_user"]
-    args["influx_password"] = exec_params["influxdb_password"]
-    args["influx_db"] = exec_params["influxdb_database"]
-    args["comparison_db"] = exec_params["influxdb_comparison"]
-    args["telegraf_db"] = exec_params["influxdb_telegraf"]
-    args["loki_host"] = exec_params["loki_host"]
-    args["loki_port"] = exec_params["loki_port"]
+    args = {'base_url': base_url, 'project_id': project_id, 'token': token, 'type': r['type'], 'simulation': r['name'],
+            'build_id': r['build_id'], 'report_id': report_id, 'env': r['environment'], 'comparison_metric': 'pct95',
+            'test_limit': 5, "influx_host": exec_params["influxdb_host"], "influx_port": "8086",
+            "influx_user": exec_params["influxdb_user"], "influx_password": exec_params["influxdb_password"],
+            "influx_db": exec_params["influxdb_database"], "comparison_db": exec_params["influxdb_comparison"],
+            "telegraf_db": exec_params["influxdb_telegraf"], "loki_host": exec_params["loki_host"],
+            "loki_port": exec_params["loki_port"]}
 
     return args
 
@@ -164,8 +131,6 @@ def run(args):
 
     args["duration"] = duration
     args["users"] = users
-    print("args ******************************")
-    print(args)
     with open("/tmp/args.json", "w") as f:
         f.write(dumps(args))
     other_processing_time = round(time() - _ts, 2)

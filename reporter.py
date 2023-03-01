@@ -299,12 +299,11 @@ def upload_file(file_name, galloper_url, project_id, token, bucket="reports"):
         print(e)
 
 
-def finish_test_report(args, response_times):
+def finish_test_report(args, response_times, test_status):
     headers = {
         'Authorization': f'bearer {args["token"]}',
         'Content-type': 'application/json'
     }
-    test_status = {"status": "Finished", "percentage": 100, "description": "Test is finished"}
     lg_type = args["influx_db"].split("_")[0] if "_" in args["influx_db"] else args["influx_db"]
     data = {'build_id': args["build_id"], 'test_name': args["simulation"], 'lg_type': lg_type,
             'missed': int(0),
@@ -420,55 +419,74 @@ def compare_request_and_threhold(request, threshold):
         return "red", metric
     return "green", metric
 
-# def trigger_task_with_smtp_integration(args, integration):
-#     email_notification_id = integration["reporters"]["reporter_email"].get("task_id")
-#     if email_notification_id:
-#         emails = integration["reporters"]["reporter_email"].get("recipients", [])
-#         if emails:
-#             task_url = f"{galloper_url}/api/v1/tasks/task/{project_id}/{email_notification_id}"
-#             event = {
-#                 "galloper_url": galloper_url,
-#                 "token": token,
-#                 "project_id": project_id,
-#                 "influx_host": args["influx_host"],
-#                 "influx_port": args["influx_port"],
-#                 "influx_user": args["influx_user"],
-#                 "influx_password": args["influx_password"],
-#                 "influx_db": args['influx_db'],
-#                 "comparison_db": args['comparison_db'],
-#                 "test": args['simulation'],
-#                 "user_list": emails,
-#                 "notification_type": "api",
-#                 "test_type": args["type"],
-#                 "env": args["env"],
-#                 "users": users_count,
-#                 "smtp_host": integration["reporters"]["reporter_email"]["integration_settings"]["host"],
-#                 "smtp_port": integration["reporters"]["reporter_email"]["integration_settings"]["port"],
-#                 "smtp_user": integration["reporters"]["reporter_email"]["integration_settings"]["user"],
-#                 "smtp_sender": integration["reporters"]["reporter_email"]["integration_settings"]["sender"],
-#                 "smtp_password": integration["reporters"]["reporter_email"]["integration_settings"]["passwd"],
-#             }
-#             if quality_gate_config.get('check_functional_errors'):
-#                 event["error_rate"] = quality_gate_config['error_rate']
-#             if quality_gate_config.get('check_performance_degradation'):
-#                 event["performance_degradation_rate"] = quality_gate_config['performance_degradation_rate']
-#             if quality_gate_config.get('check_missed_thresholds'):
-#                 event["missed_thresholds"] = quality_gate_config['missed_thresholds_rate']
-#
-#             res = requests.post(task_url, json=event, headers={'Authorization': f'bearer {token}',
-#                                                                'Content-type': 'application/json'})
-#             logger.info("Email notification")
-#             logger.info(res.text)
+def parse_quality_gate(quality_gate_data: dict) -> dict:
+    '''Parse QualityGate configuration from integrations.
+            If any of the values in the dictionary is -1,
+            then we set the corresponding flag as False.
+            '''
+    print("Parsing QualityGate configuration")
+    try:
+        return {
+            'check_functional_errors': quality_gate_data['error_rate'] != -1,
+            'check_performance_degradation': quality_gate_data['degradation_rate'] != -1,
+            'check_missed_thresholds': quality_gate_data['missed_thresholds'] != -1,
+            'error_rate': quality_gate_data['error_rate'],
+            'performance_degradation_rate': quality_gate_data['degradation_rate'],
+            'missed_thresholds_rate': quality_gate_data['missed_thresholds'],
+        }
+    except Exception as e:
+        print("Failed to parse QualityGate configuration")
+        print(e)
+        return {}
+
+def trigger_task_with_smtp_integration(args, test_data, integration):
+    email_notification_id = integration["reporters"]["reporter_email"].get("task_id")
+    if email_notification_id:
+        emails = integration["reporters"]["reporter_email"].get("recipients", [])
+        if emails:
+            task_url = f"{args['base_url']}/api/v1/tasks/run_task/{args['project_id']}/{email_notification_id}"
+            event = {
+                "galloper_url": args['base_url'],
+                "token": args['token'],
+                "project_id": args['project_id'],
+                "test_data": test_data,
+                "influx_host": args["influx_host"],
+                "influx_port": args["influx_port"],
+                "influx_user": args["influx_user"],
+                "influx_password": args["influx_password"],
+                "influx_db": args['influx_db'],
+                "comparison_db": args['comparison_db'],
+                "test": args['simulation'],
+                "user_list": emails,
+                "notification_type": "api",
+                "test_type": args["type"],
+                "env": args["env"],
+                "users": args["users"],
+                "smtp_host": integration["reporters"]["reporter_email"]["integration_settings"]["host"],
+                "smtp_port": integration["reporters"]["reporter_email"]["integration_settings"]["port"],
+                "smtp_user": integration["reporters"]["reporter_email"]["integration_settings"]["user"],
+                "smtp_sender": integration["reporters"]["reporter_email"]["integration_settings"]["sender"],
+                "smtp_password": integration["reporters"]["reporter_email"]["integration_settings"]["passwd"],
+            }
+            if quality_gate_config.get('check_functional_errors'):
+                event["error_rate"] = quality_gate_config['error_rate']
+            if quality_gate_config.get('check_performance_degradation'):
+                event["performance_degradation_rate"] = quality_gate_config['performance_degradation_rate']
+            if quality_gate_config.get('check_missed_thresholds'):
+                event["missed_thresholds"] = quality_gate_config['missed_thresholds_rate']
+
+            res = requests.post(task_url, json=event, headers={'Authorization': f'bearer {args["token"]}',
+                                                               'Content-type': 'application/json'})
+            print("Email notification")
+            print(res.text)
 
 
 if __name__ == '__main__':
     timestamp = time()
     args = get_args()
-    print("args")
-    print(args)
     client = InfluxDBClient(args["influx_host"], args["influx_port"], args["influx_user"], args["influx_password"],
                             args["influx_db"])
-    performance_degradation_rate, missed_threshold_rate = 0, 0
+    total_checked_thresholds, performance_degradation_rate, missed_threshold_rate = 0, 0, 0
     compare_with_baseline, compare_with_thresholds = None, None
     try:
         response_times = get_response_times()
@@ -486,9 +504,9 @@ if __name__ == '__main__':
         send_engine_health_memory(args)
         send_engine_health_load(args)
         send_loki_errors(args)
-        finish_test_report(args, response_times)
 
         # Compare with thresholds
+        aggregated_test_data = {}
         try:
             aggregated_test_data = {
                 'throughput': round(float(args['total_requests_count']) / float(args['duration']), 3),
@@ -502,10 +520,28 @@ if __name__ == '__main__':
         except Exception as e:
             print(e)
 
-        print("integrations")
-        print(integrations)
-        # if integrations and integrations.get("reporters") and "reporter_email" in integrations["reporters"].keys():
-        #     trigger_task_with_smtp_integration(args, integrations)
+        if integrations.get('processing', {}).get('quality_gate'):
+            quality_gate_config = parse_quality_gate(integrations['processing']['quality_gate'])
+        else:
+            quality_gate_config = {}
+        try:
+            thresholds_quality_gate = int(quality_gate_config["missed_thresholds_rate"])
+            # thresholds_quality_gate = int(integration["reporters"]["quality_gate"]["failed_thresholds_rate"])
+        except:
+            thresholds_quality_gate = 20
+        if total_checked_thresholds:
+            if missed_threshold_rate > thresholds_quality_gate:
+                test_status = {"status": "Failed", "percentage": 100,
+                               "description": f"Missed more then {thresholds_quality_gate}% thresholds"}
+            else:
+                test_status = {"status": "Success", "percentage": 100,
+                               "description": f"Successfully met more than {100 - thresholds_quality_gate}% of thresholds"}
+        else:
+            test_status = {"status": "Finished", "percentage": 100, "description": "Test is finished"}
+
+        finish_test_report(args, response_times, test_status)
+        if integrations and integrations.get("reporters") and "reporter_email" in integrations["reporters"].keys():
+            trigger_task_with_smtp_integration(args, aggregated_test_data, integrations)
     except Exception as e:
         print("Failed to update report")
         print(e)

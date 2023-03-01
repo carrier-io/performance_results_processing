@@ -124,6 +124,162 @@ def send_summary_table_data(args, client, response_times, comparison_data, times
     return res, error_count
 
 
+def send_engine_health_cpu(args): 
+    start_time = args['start_time']
+    end_time = args['end_time']
+    
+    QUERY = '''
+        SELECT 
+            mean(\"usage_system\") as "system",
+            mean(\"usage_user\") as "user",
+            mean(\"usage_softirq\") as "softirq",
+            mean(\"usage_iowait\") as "iowait"
+        FROM \"cpu\" 
+        WHERE build_id='{}'
+        AND cpu='cpu-total' 
+        AND time>='{}'
+        AND time<='{}'
+        GROUP BY time({}), host
+    '''
+    fields = "time,system,user,softirq,iowait,host"
+    client = InfluxDBClient(args["influx_host"], args["influx_port"], args["influx_user"], args["influx_password"],
+                            args["comparison_db"])
+    
+    client.switch_database(args['telegraf_db'])
+    
+    for each in ["1s", "5s", "30s", "1m", "5m", "10m"]:
+        _results = client.query(QUERY.format(args['build_id'], start_time, end_time, each))
+        with open(f"/tmp/health_cpu_{args['build_id']}_{each}.csv", "w", newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fields.split(','))
+            writer.writeheader()
+            for (_, groups), series in _results.items():
+                for line in series:
+                    writer.writerow({**line, **groups})
+        upload_test_results(args, f"/tmp/health_cpu_{args['build_id']}_{each}.csv")
+    
+    client.switch_database(args['influx_db'])
+    
+    print("********engine_health_cpu done")
+
+
+def send_engine_health_memory(args):
+    start_time = args['start_time']
+    end_time = args['end_time']
+    
+    QUERY = '''
+        SELECT 
+            HeapMemoryUsage.used as "heap memory", 
+            NonHeapMemoryUsage.used as "non-heap memory"
+        FROM "java_memory" 
+        WHERE "build_id" = '{}'
+        AND time >= '{}'
+        AND time <= '{}'
+        GROUP BY host
+    '''
+    fields = "time,heap memory,non-heap memory,host"
+    
+    client = InfluxDBClient(args["influx_host"], args["influx_port"], args["influx_user"], args["influx_password"],
+                            args["comparison_db"])
+    
+    client.switch_database(args['telegraf_db'])
+    
+    _results = client.query(QUERY.format(args['build_id'], start_time, end_time))
+    with open(f"/tmp/health_memory_{args['build_id']}.csv", "w", newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=fields.split(','))
+        writer.writeheader()
+        for (_, groups), series in _results.items():
+            for line in series:
+                writer.writerow({**line, **groups})
+    upload_test_results(args, f"/tmp/health_memory_{args['build_id']}.csv")
+    
+    client.switch_database(args['influx_db'])
+    
+    print("********engine_health_memory done")
+    
+    
+def send_engine_health_load(args):
+    start_time = args['start_time']
+    end_time = args['end_time']
+    
+    QUERY = '''
+        SELECT 
+            mean(load1) as "load1",
+            mean(load5) as "load5",
+            mean(load15) as "load15"
+        FROM "system" 
+        WHERE "build_id" = '{}'
+        AND time >= '{}'
+        AND time <= '{}'
+        GROUP BY time({}), host
+    '''
+    fields = "time,load1,load5,load15,host"
+    
+    client = InfluxDBClient(args["influx_host"], args["influx_port"], args["influx_user"], args["influx_password"],
+                            args["comparison_db"])
+    
+    client.switch_database(args['telegraf_db'])
+            
+    for each in ["1s", "5s", "30s", "1m", "5m", "10m"]:
+        _results = client.query(QUERY.format(args['build_id'], start_time, end_time, each))
+        with open(f"/tmp/health_load_{args['build_id']}_{each}.csv", "w", newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fields.split(','))
+            writer.writeheader()
+            for (_, groups), series in _results.items():
+                for line in series:
+                    writer.writerow({**line, **groups})
+        upload_test_results(args, f"/tmp/health_load_{args['build_id']}_{each}.csv")
+        
+    client.switch_database(args['influx_db'])
+    
+    print("********engine_health_load done")
+    
+    
+def send_loki_errors(args):
+    start_time = args['start_time']
+    end_time = args['end_time']
+    
+    url = f"{args['loki_host']}:{args['loki_port']}/loki/api/v1/query_range"
+    data = {
+        "direction": "BACKWARD",
+        "limit": 5000,
+        "query": '{filename="/tmp/' + args['simulation'] + '.log"}',
+        "start": start_time,
+        "end": end_time
+    }
+    results = requests.get(url, params=data, headers={"Content-Type": "application/json"}).json()
+    
+    t_format = "%Y-%m-%dT%H:%M:%SZ"
+    issues = []
+    for result in results["data"]["result"]:
+        for line in result['values']:
+            issue = {'time': datetime.datetime.fromtimestamp(int(line[0])/1000000000).strftime(t_format)}
+            values = line[1].strip().split("\t")
+            for value in values:
+                if ": " in value:
+                    k, v = value.split(": ", 1)
+                    issue[k] = v
+            issues.append(issue)
+    
+    fields = ['time', 
+                'Error key', 
+                'Request name', 
+                'Method', 
+                'Response code', 
+                'URL', 
+                'Error message', 
+                'Request params', 
+                'Headers', 
+                'Response body'
+                ]
+    with open(f"/tmp/errors_{args['build_id']}.csv", "w", newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fields)
+        writer.writeheader()
+        for line in issues:
+            writer.writerow(line)
+    upload_test_results(args, f"/tmp/errors_{args['build_id']}.csv")
+    print("********LOKI ERRORS done")
+
+
 def upload_test_results(args, filename):
     bucket = args['simulation'].replace("_", "").lower()
     import gzip
@@ -326,6 +482,10 @@ if __name__ == '__main__':
         except Exception as e:
             print("Failed to compare with baseline")
             print(e)
+        send_engine_health_cpu(args)
+        send_engine_health_memory(args)
+        send_engine_health_load(args)
+        send_loki_errors(args)
         finish_test_report(args, response_times)
 
         # Compare with thresholds

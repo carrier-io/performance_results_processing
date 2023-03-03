@@ -1,3 +1,4 @@
+git+https://github.com/carrier-io/perfreporter.git@next
 git+https://github.com/carrier-io/loki_logger.git
 requests==2.25.0
 influxdb==5.2.0

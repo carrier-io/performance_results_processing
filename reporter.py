@@ -8,9 +8,11 @@ from os import environ
 import operator
 from traceback import format_exc
 
-from perfreporter.jira_reporter import JiraReporter
-from perfreporter.ado_reporter import ADOReporter
-from perfreporter.engagement_reporter import EngagementReporter
+from perfreporter.base_reporter import Reporter
+from perfreporter.junit_reporter import JUnit_reporter
+# from perfreporter.jira_reporter import JiraReporter
+# from perfreporter.ado_reporter import ADOReporter
+# from perfreporter.engagement_reporter import EngagementReporter
 
 
 DELETE_TEST_DATA = "delete from {} where build_id='{}'"
@@ -508,18 +510,14 @@ def trigger_task_with_smtp_integration(args, test_data, integration):
 
 
 def get_reporters(reporters_config) -> list:
-    reporter_mapper = {
-        'reporter_jira': JiraReporter,
-        'azure_devops': ADOReporter,
-        'reporter_engagement': EngagementReporter
-    }
     reporters = []
-    for reporter in reporter_mapper:
-        if reporters_config.get(reporter):
-            if reporter_mapper[reporter].is_valid_config(reporters_config[reporter]):
-                reporters.append(reporter_mapper[reporter])
-            else:
-                print(f"{reporter} values missing, proceeding without {reporter}")
+    for reporter in Reporter.__subclasses__():
+        print(f'Check reporter: {reporter}')
+        if reporter.is_valid_config(reporters_config):
+            print(f'{reporter} is valid')
+            reporters.append(reporter)
+        else:
+            print(f"{reporter} values missing, proceeding without {reporter}")
     return reporters
 
 
@@ -530,6 +528,7 @@ if __name__ == '__main__':
     print(args)
     print('integrations***********')
     print(integrations)
+    headers = {'Authorization': f'bearer {args["token"]}'} if args["token"] else {}
     client = InfluxDBClient(args["influx_host"], args["influx_port"], args["influx_user"], args["influx_password"],
                             args["influx_db"])
     total_checked_thresholds, performance_degradation_rate, missed_threshold_rate = 0, 0, 0
@@ -584,6 +583,19 @@ if __name__ == '__main__':
                                "description": f"Successfully met more than {100 - thresholds_quality_gate}% of thresholds"}
         else:
             test_status = {"status": "Finished", "percentage": 100, "description": "Test is finished"}
+        
+        if quality_gate_config:
+            try:
+                results_bucket = args['simulation'].replace("_", "").lower()
+                _, _, thresholds = _compare_with_thresholds(args, current_test_results, aggregated_test_data, True)
+                report = JUnit_reporter.create_report(thresholds, args['build_id'])
+                files = {'file': open(report, 'rb')}
+                upload_url = f'{args["base_url"]}/api/v1/artifacts/artifacts/{args["project_id"]}/{results_bucket}'
+                requests.post(upload_url, allow_redirects=True, files=files, headers=headers)
+            except Exception as e:
+                print("Failed to create junit report")
+                print(e)
+            
 
         finish_test_report(args, response_times, test_status)
         

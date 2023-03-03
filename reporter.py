@@ -8,6 +8,10 @@ from os import environ
 import operator
 from traceback import format_exc
 
+from perfreporter.jira_reporter import JiraReporter
+from perfreporter.ado_reporter import ADOReporter
+from perfreporter.engagement_reporter import EngagementReporter
+
 
 DELETE_TEST_DATA = "delete from {} where build_id='{}'"
 DELETE_USERS_DATA = "delete from \"users\" where build_id='{}'"
@@ -280,6 +284,28 @@ def send_loki_errors(args):
     print("********LOKI ERRORS done")
 
 
+def get_aggregated_errors():
+    aggregated_errors = {}
+    with open(f"/tmp/errors_{args['build_id']}.csv", "r") as csvfile:
+        errors = csv.DictReader(csvfile)
+        for each in errors:
+            if each['Error key'] in aggregated_errors:
+                aggregated_errors[each['Error key']]['Error count'] += 1
+            else:
+                aggregated_errors[each['Error key']] = {
+                    'Request name': each['Request name'],
+                    'Method': each['Method'],
+                    'Request headers': each['Headers'],
+                    'Error count': 1,
+                    'Response code': each['Response code'],
+                    'Request URL': each['URL'],
+                    'Request_params': [each['Request params']],
+                    'Response': [each['Response body']],
+                    'Error_message': [each['Error message']],
+                }
+    return aggregated_errors
+
+
 def upload_test_results(args, filename):
     bucket = args['simulation'].replace("_", "").lower()
     import gzip
@@ -421,9 +447,9 @@ def compare_request_and_threhold(request, threshold):
 
 def parse_quality_gate(quality_gate_data: dict) -> dict:
     '''Parse QualityGate configuration from integrations.
-            If any of the values in the dictionary is -1,
-            then we set the corresponding flag as False.
-            '''
+    If any of the values in the dictionary is -1,
+    then we set the corresponding flag as False.
+    '''
     print("Parsing QualityGate configuration")
     try:
         return {
@@ -481,9 +507,29 @@ def trigger_task_with_smtp_integration(args, test_data, integration):
             print(res.text)
 
 
+def get_reporters(reporters_config) -> list:
+    reporter_mapper = {
+        'reporter_jira': JiraReporter,
+        'azure_devops': ADOReporter,
+        'reporter_engagement': EngagementReporter
+    }
+    reporters = []
+    for reporter in reporter_mapper:
+        if reporters_config.get(reporter):
+            if reporter_mapper[reporter].is_valid_config(reporters_config[reporter]):
+                reporters.append(reporter_mapper[reporter])
+            else:
+                print(f"{reporter} values missing, proceeding without {reporter}")
+    return reporters
+
+
 if __name__ == '__main__':
     timestamp = time()
     args = get_args()
+    print('args***********')
+    print(args)
+    print('integrations***********')
+    print(integrations)
     client = InfluxDBClient(args["influx_host"], args["influx_port"], args["influx_user"], args["influx_password"],
                             args["influx_db"])
     total_checked_thresholds, performance_degradation_rate, missed_threshold_rate = 0, 0, 0
@@ -540,8 +586,32 @@ if __name__ == '__main__':
             test_status = {"status": "Finished", "percentage": 100, "description": "Test is finished"}
 
         finish_test_report(args, response_times, test_status)
-        if integrations and integrations.get("reporters") and "reporter_email" in integrations["reporters"].keys():
-            trigger_task_with_smtp_integration(args, aggregated_test_data, integrations)
+        
+        if integrations and integrations.get("reporters"):
+            print('Start reporting')
+            if "reporter_email" in integrations["reporters"].keys():
+                trigger_task_with_smtp_integration(args, aggregated_test_data, integrations)
+                print('Reporting to Email finished')
+
+            reporters = get_reporters(integrations["reporters"])
+            aggregated_errors = get_aggregated_errors()
+            print('Errors aggregated')
+            for active_reporter in reporters:
+                print(f'Reporting to {active_reporter}')
+                reporter = active_reporter(args, integrations["reporters"], quality_gate_config)
+                print('Reporter created')
+                if reporter.check_functional_errors:
+                    reporter.report_errors(aggregated_errors)
+                    print('report_errors is done')
+                if reporter.check_performance_degradation:
+                    if performance_degradation_rate > reporter.performance_degradation_rate:
+                        reporter.report_performance_degradation(performance_degradation_rate, compare_with_baseline)
+                        print('report_performance_degradation is done')
+                if reporter.check_missed_thresholds:
+                    if missed_threshold_rate > reporter.missed_thresholds_rate:
+                        reporter.report_missed_thresholds(missed_threshold_rate, compare_with_thresholds)
+                        print('report_missed_thresholds is done')
+
     except Exception as e:
         print("Failed to update report")
         print(e)
@@ -549,6 +619,7 @@ if __name__ == '__main__':
     upload_test_results(args, f"/tmp/{args['build_id']}.csv")
     upload_test_results(args, f"/tmp/users_{args['build_id']}.csv")
     client.switch_database(args['influx_db'])
+
     res = client.query(DELETE_TEST_DATA.format(args["simulation"], args["build_id"]))
     res2 = client.query(DELETE_USERS_DATA.format(args["build_id"]))
     print("DELETED **************")

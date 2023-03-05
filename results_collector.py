@@ -44,7 +44,7 @@ def get_args():
 def get_test_status():
     url = f'{base_url}/api/v1/backend_performance/report_status/{project_id}/{report_id}'
     res = requests.get(url, headers=headers)
-    return res.text
+    return res.json()
 
 
 def run(args):
@@ -68,13 +68,13 @@ def run(args):
             sleep(pause)
             tik = time()
             status = get_test_status()
-            print(f"Status: {status}")
+            print(f"Status: {status['message']}")
             requests_data = list(
                 client.query(SELECT_REQUESTS_DATA.format(test_name, build_id, requests_last_read_time)).get_points())
             users_data = list(client.query(SELECT_USERS_DATA.format(build_id, users_last_read_time)).get_points())
             if iteration == 1:
                 start_time = requests_data[0]['time']
-            if "Post processing" in status and len(requests_data) == 0:
+            if status["message"] in ["Post processing", "Canceled"] and len(requests_data) == 0:
                 print("Looks like tests are done")
                 break
             if requests_data:
@@ -109,8 +109,7 @@ def run(args):
             print(f"Total time - {processing_time} sec")
         except Exception as e:
             print(e)
-            print("Sleep for 2 minutes to get InfluxDB back:)")
-            sleep(120)
+            sleep(30)
     _ts = time()
     print("Lets check total requests count ...")
     total = int(list(client.query(TOTAL_REQUEST_COUNT.format(test_name, build_id)).get_points())[0]["count"])

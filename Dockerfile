@@ -17,6 +17,7 @@ RUN Rscript requirements.r
 
 COPY results_collector.py /
 COPY reporter.py /
+COPY data_manager.py /
 COPY results_processor.R /
 COPY start.sh /
 ENV PYTHONUNBUFFERED=1

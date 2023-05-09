@@ -48,11 +48,11 @@ aggregate_results <- function(original_results_csv, aggregation, aggregation_suf
 aggregate_users <- function(original_users_csv, aggregation, aggregation_suffix) {
   aggregatedCSV <- mutate(original_users_csv, interval=as.integer(time) %/% aggregation )
   results <- aggregatedCSV %>%
-  dplyr::group_by(lg_id = aggregatedCSV$lg_id, group = aggregatedCSV$interval) %>%
+  dplyr::group_by(group = aggregatedCSV$interval) %>%
   dplyr::summarize(time=glue("{gsub(' ', 'T', first(time))}Z"),
-                   sum=sum(tapply(active, lg_id, FUN = max)))
+                   sum=sum(tapply(active, lg_id, max)))
 
-  results = results[,c(3,4)]
+  results = results[,c(2,3)]
   file_name = glue("/tmp/users_{build_id}_{aggregation_suffix}.csv")
   write.csv(results, file_name, row.names = FALSE, fileEncoding = "UTF-8", quote = FALSE, eol = "\n")
   gzip(file_name, destname=glue("{file_name}.gz"))

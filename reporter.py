@@ -77,7 +77,7 @@ def get_reporters(reporters_config) -> list:
 
 
 def reporting_junit(data_manager, args, current_test_results, aggregated_test_data, all_checks, 
-                    reasons_to_fail_report, quality_gate_config):
+                    reasons_to_fail_report, quality_gate_config, s3_config):
     headers = {'Authorization': f'bearer {args["token"]}'} if args["token"] else {}
     logger.info('Start reporting to JUnit')
     try:
@@ -87,7 +87,7 @@ def reporting_junit(data_manager, args, current_test_results, aggregated_test_da
         report = JUnitReporter.create_report(thresholds, args['build_id'], all_checks, reasons_to_fail_report)
         files = {'file': open(report, 'rb')}
         upload_url = f'{args["base_url"]}/api/v1/artifacts/artifacts/{args["project_id"]}/{results_bucket}'
-        requests.post(upload_url, allow_redirects=True, files=files, headers=headers)
+        requests.post(upload_url, params=s3_config, allow_redirects=True, files=files, headers=headers)
     except Exception as e:
         logger.error("Failed to create junit report")
         logger.error(e)
@@ -133,10 +133,12 @@ def get_loki_logger(args):
 if __name__ == '__main__':
     timestamp = time()
     integrations = loads(environ.get("integrations", '{}'))
-    args = DataManager.get_args()
+    quality_gate_config = integrations.get('processing', {}).get('quality_gate', {})
+    s3_config = integrations.get('system', {}).get('s3_integration', {})
     
-    logger = get_loki_logger(args)   
-    data_manager = DataManager(args, logger)
+    args = DataManager.get_args()
+    logger = get_loki_logger(args)
+    data_manager = DataManager(args, s3_config, logger)
     total_checked_thresholds, performance_degradation_rate, missed_threshold_rate = 0, 0, 0
     compare_baseline_summary, compare_baseline_per_request = [], []
     compare_baseline_per_request_details = []
@@ -150,7 +152,6 @@ if __name__ == '__main__':
         data_manager.send_engine_health_load()
         data_manager.send_loki_errors()
 
-        quality_gate_config = integrations.get('processing', {}).get('quality_gate', {})
         logger.info('Compare with baseline')
         try:
             if quality_gate_config.get("baseline", {}).get("checked"):
@@ -245,7 +246,7 @@ if __name__ == '__main__':
         logger.info('Start reporting')
         if quality_gate_config:
             reporting_junit(data_manager, args, current_test_results, aggregated_test_data, 
-                            all_checks, reasons_to_fail_report, quality_gate_config)
+                            all_checks, reasons_to_fail_report, quality_gate_config, s3_config)
 
         reporting(data_manager, args, aggregated_test_data, integrations, quality_gate_config, report_performance_degradation,
                   compare_baseline_per_request_details, report_missed_thresholds, compare_with_thresholds)

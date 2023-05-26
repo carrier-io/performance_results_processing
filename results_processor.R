@@ -6,12 +6,14 @@ library(dplyr)
 library('R.utils')
 library(httr)
 library(glue)
+library(jsonlite)
 
 build_id = Sys.getenv("build_id")
 base_url = Sys.getenv("base_url")
 project_id = Sys.getenv("project_id")
 bucket = Sys.getenv("bucket")
 token = Sys.getenv("token")
+s3_integration = fromJSON(Sys.getenv("integrations"))$system$s3_integration
 
 aggregate_results <- function(original_results_csv, aggregation, aggregation_suffix) {
   lts <- Sys.time()
@@ -40,7 +42,8 @@ aggregate_results <- function(original_results_csv, aggregation, aggregation_suf
   write.csv(results, file_name, row.names = FALSE, fileEncoding = "UTF-8", quote = FALSE, eol = "\n")
   gzip(file_name, destname=glue("{file_name}.gz"))
   url = glue("{base_url}/api/v1/artifacts/artifacts/{project_id}/{bucket}")
-  r = POST(url, body = list("file" = upload_file(glue("{file_name}.gz"))), add_headers("Authorization" = glue("Bearer {token}")))
+  r = POST(url, body = list("file" = upload_file(glue("{file_name}.gz"))), query = s3_integration, 
+           add_headers("Authorization" = glue("Bearer {token}")))
   rm(results)
   difftime(Sys.time(), lts)
 }
@@ -57,7 +60,8 @@ aggregate_users <- function(original_users_csv, aggregation, aggregation_suffix)
   write.csv(results, file_name, row.names = FALSE, fileEncoding = "UTF-8", quote = FALSE, eol = "\n")
   gzip(file_name, destname=glue("{file_name}.gz"))
   url = glue("{base_url}/api/v1/artifacts/artifacts/{project_id}/{bucket}")
-  r = POST(url, body = list("file" = upload_file(glue("{file_name}.gz"))), add_headers("Authorization" = glue("Bearer {token}")))
+  r = POST(url, body = list("file" = upload_file(glue("{file_name}.gz"))), query = s3_integration, 
+           add_headers("Authorization" = glue("Bearer {token}")))
   rm(results)
 }
 

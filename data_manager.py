@@ -48,7 +48,7 @@ COMPARISON_RULES = {"gte": "ge", "lte": "le", "gt": "gt", "lt": "lt", "eq": "eq"
 
 
 class DataManager():
-    def __init__(self, args, logger):
+    def __init__(self, args, s3_config, logger):
         self.args = args
         self.base_url = args['base_url']
         self.token = args["token"]
@@ -57,6 +57,7 @@ class DataManager():
         self.start_time = self.args['start_time']
         self.end_time = self.args['end_time']
         self.last_build_data = None
+        self.s3_config = s3_config
         self.headers = {'Authorization': f'bearer {args["token"]}'} if args["token"] else {}
         self.logger = logger
         self.client = self._get_client()
@@ -117,7 +118,8 @@ class DataManager():
         file = {'file': open(f"{file_name}", 'rb')}
         try:
             requests.post(f"{self.base_url}/api/v1/artifacts/artifacts/{self.project_id}/{bucket}",
-                        files=file, allow_redirects=True, headers={'Authorization': f"Bearer {self.token}"})
+                          params=self.s3_config, files=file, allow_redirects=True, 
+                          headers={'Authorization': f"Bearer {self.token}"})
         except Exception as e:
             self.logger.error(e)
 

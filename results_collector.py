@@ -72,9 +72,9 @@ def run(args):
             requests_data = list(
                 client.query(SELECT_REQUESTS_DATA.format(test_name, build_id, requests_last_read_time)).get_points())
             users_data = list(client.query(SELECT_USERS_DATA.format(build_id, users_last_read_time)).get_points())
-            if iteration == 1:
+            if not start_time:
                 start_time = requests_data[0]['time']
-            if status["message"] in ["Post processing", "Canceled"] and len(requests_data) == 0:
+            if status["message"] in ["Post processing", "Canceled", "Failed"] and len(requests_data) == 0:
                 print("Looks like tests are done")
                 break
             if requests_data:
@@ -111,25 +111,34 @@ def run(args):
             print(e)
             sleep(30)
     _ts = time()
-    print("Lets check total requests count ...")
-    total = int(list(client.query(TOTAL_REQUEST_COUNT.format(test_name, build_id)).get_points())[0]["count"])
-    print(f"Total from influx: {total}. Total from PP: {req_count}. {total == req_count}")
-    args['total_requests_count'] = req_count
-    args["start_time"] = start_time
-    args["end_time"] = requests_last_read_time
+    try:
+        print("Lets check total requests count ...")
+        total = int(list(client.query(TOTAL_REQUEST_COUNT.format(test_name, build_id)).get_points())[0]["count"])
+        print(f"Total from influx: {total}. Total from PP: {req_count}. {total == req_count}")
+        args['total_requests_count'] = req_count
+        args["start_time"] = start_time
+        args["end_time"] = requests_last_read_time
 
-    # get users count
-    data = client.query(SELECT_USERS_COUNT.format(build_id))
-    data = list(data.get_points())[0]
-    users =  int(data['sum'])
+        # get users count
+        data = client.query(SELECT_USERS_COUNT.format(build_id))
+        data = list(data.get_points())[0]
+        users = int(data['sum'])
 
-    # calculate duration
-    start_time = int(str(datetime.datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp()).split(".")[0])
-    end_time = int(str(datetime.datetime.strptime(requests_last_read_time, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp()).split(".")[0])
-    duration = end_time - start_time
+        # calculate duration
+        start_time = int(str(datetime.datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp()).split(".")[0])
+        end_time = int(
+            str(datetime.datetime.strptime(requests_last_read_time, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp()).split(".")[0])
+        duration = end_time - start_time
 
-    args["duration"] = duration
-    args["users"] = users
+        args["duration"] = duration
+        args["users"] = users
+    except Exception as e:
+        print(e)
+        args['total_requests_count'] = req_count
+        args["start_time"] = requests_last_read_time
+        args["end_time"] = requests_last_read_time
+        args["duration"] = 0
+        args["users"] = 0
     with open("/tmp/args.json", "w") as f:
         f.write(dumps(args))
     other_processing_time = round(time() - _ts, 2)

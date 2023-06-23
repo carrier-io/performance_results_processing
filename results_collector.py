@@ -77,6 +77,9 @@ def run(args):
             if status["message"] in ["Post processing", "Canceled", "Failed"] and len(requests_data) == 0:
                 print("Looks like tests are done")
                 break
+            if status["message"] in ["Failed"]:
+                print("Got failed status message")
+                break
             if requests_data:
                 requests_last_read_time = requests_data[-1]['time']
                 users_last_read_time = users_data[-1]['time']

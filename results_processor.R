@@ -22,7 +22,7 @@ aggregate_results <- function(original_results_csv, aggregation, aggregation_suf
   difftime(Sys.time(), lts)
   results <- aggregatedCSV %>%
   dplyr::group_by(request_name = aggregatedCSV$request_name, method = aggregatedCSV$method, status = aggregatedCSV$status, group = aggregatedCSV$interval) %>%
-  dplyr::summarize(time=glue("{gsub(' ', 'T', first(time))}Z"),
+  dplyr::summarize(time=format(strptime(first(time), format = "%Y-%m-%d %H:%M:%OS"), format = "%Y-%m-%dT%H:%M:%SZ"),
                    total=n(),
                    min=min(response_time),
                    max=max(response_time),
@@ -52,7 +52,7 @@ aggregate_users <- function(original_users_csv, aggregation, aggregation_suffix)
   aggregatedCSV <- mutate(original_users_csv, interval=as.integer(time) %/% aggregation )
   results <- aggregatedCSV %>%
   dplyr::group_by(group = aggregatedCSV$interval) %>%
-  dplyr::summarize(time=glue("{gsub(' ', 'T', first(time))}Z"),
+  dplyr::summarize(time=format(strptime(first(time), format = "%Y-%m-%d %H:%M:%OS"), format = "%Y-%m-%dT%H:%M:%SZ"),
                    sum=sum(tapply(active, lg_id, max)))
 
   results = results[,c(2,3)]

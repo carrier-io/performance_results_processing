@@ -269,16 +269,6 @@ class DataManager():
         }
         results = requests.get(url, params=data, headers={"Content-Type": "application/json"}).json()
         t_format = "%Y-%m-%dT%H:%M:%SZ"
-        issues = []
-        for result in results["data"]["result"]:
-            for line in result['values']:
-                issue = {'time': datetime.datetime.fromtimestamp(int(line[0])/1000000000).strftime(t_format)}
-                values = line[1].strip().split("\t")
-                for value in values:
-                    if ": " in value:
-                        k, v = value.split(": ", 1)
-                        issue[k] = v
-                issues.append(issue)
         fields = ['time',
                   'Error key',
                   'Request name',
@@ -290,6 +280,18 @@ class DataManager():
                   'Headers',
                   'Response body'
                   ]
+        issues = []
+        for result in results["data"]["result"]:
+            for line in result['values']:
+                issue = {'time': datetime.datetime.fromtimestamp(int(line[0])/1000000000).strftime(t_format)}
+                values = line[1].strip().split("\t")
+                for value in values:
+                    if ": " in value:
+                        k, v = value.split(": ", 1)
+                        if k in fields:
+                            issue[k] = v
+                if 'Error key' in issue.keys():
+                    issues.append(issue)
         with open(f"/tmp/errors_{self.build_id}.csv", "w", newline='') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fields)
             writer.writeheader()

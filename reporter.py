@@ -146,11 +146,26 @@ if __name__ == '__main__':
         response_times = data_manager.get_response_times()
         comparison_data = data_manager.get_comparison_data()
         current_test_results, error_count = data_manager.send_summary_table_data(response_times, comparison_data, timestamp)
-
-        data_manager.send_engine_health_cpu()
-        data_manager.send_engine_health_memory()
-        data_manager.send_engine_health_load()
-        data_manager.send_loki_errors()
+        try:
+            data_manager.send_engine_health_cpu()
+        except Exception as e:
+            logger.error("Failed to send_engine_health_cpu")
+            logger.error(e)
+        try:
+            data_manager.send_engine_health_memory()
+        except Exception as e:
+            logger.error("Failed to send_engine_health_memory")
+            logger.error(e)
+        try:
+            data_manager.send_engine_health_load()
+        except Exception as e:
+            logger.error("Failed to send_engine_health_load")
+            logger.error(e)
+        try:
+            data_manager.send_loki_errors()
+        except Exception as e:
+            logger.error("Failed to send_loki_errors")
+            logger.error(e)
 
         logger.info('Compare with baseline')
         try:

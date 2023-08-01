@@ -1,153 +1,266 @@
-from os import environ
+import asyncio
+import csv
+from pathlib import Path
+from typing import Generator, Tuple
+
 import requests
 from influxdb import InfluxDBClient
-from time import sleep, time
-import datetime
-from json import loads, dumps
+from time import time
+from datetime import datetime
+
+from models import CollectorConfig, TestData, InfluxQueries, TestStatus, AllArgs
+from utils import build_api_url
 
 
-result_fields = "time,request_name,method,response_time,status,status_code,lg_id"
-user_fields = "time,active,lg_id"
-TOTAL_REQUEST_COUNT = "select count(\"response_time\") from {} where build_id='{}'"
-SELECT_USERS_COUNT = "select sum(\"max\") from (select max(\"user_count\") from \"users\" where " \
-                     "build_id='{}' group by lg_id)"
-SELECT_USERS_DATA = "select time, active, lg_id from \"users\" where build_id=\'{}\' and time>\'{}\'"
-SELECT_REQUESTS_DATA = "select time, request_name, lg_id, method, response_time, status, status_code from {} " \
-                       "where build_id=\'{}\' and time>\'{}\'"
-build_id = environ.get("build_id")
-base_url = environ.get("base_url")
-project_id = environ.get("project_id")
-token = environ.get("token")
-report_id = environ.get("report_id")
-exec_params = loads(environ.get("exec_params"))
-results_file_name = f"/tmp/{build_id}.csv"
-users_file_name = f"/tmp/users_{build_id}.csv"
+class Collector:
+    def __init__(self, config: CollectorConfig | dict | None = None):
+        if config:
+            if isinstance(config, dict):
+                self.config = CollectorConfig.model_validate(config)
+            else:
+                self.config = config
+        else:
+            self.config = CollectorConfig.from_env()
 
+        self.test_data = self._fetch_test_data()
+        self._test_status = self.test_data.test_status
+        print('Test status: ', self._test_status)
+        self.influx_queries = InfluxQueries(
+            test_name=self.test_data.name,
+            request_data_fields=self.config.result_fields,
+            user_fields=self.config.user_fields,
+        )
+        self.requests_start_time = None
+        self.requests_end_time = None
 
-headers = {'Authorization': f'bearer {token}'}
+    def _fetch_test_data(self) -> TestData:
+        url = '/'.join(map(str, [
+            self.config.base_url,
+            build_api_url('backend_performance', 'reports').lstrip('/'),
+            self.config.project_id
+        ]))
+        params = {'report_id': self.config.report_id}
+        r = requests.get(url, headers=self.config.api_headers, params=params)
+        if not r.ok:
+            raise Exception('Could not fetch test params from centry by url: %s' % url)
+        return TestData.model_validate(r.json())
 
+    @property
+    def test_status(self) -> TestStatus:
+        delta = datetime.utcnow() - self._test_status._updated
+        if delta.total_seconds() > self.config.test_status_update_interval:
+            self._test_status = self._get_test_status()
+            print('Updating test status:', self._test_status)
+        return self._test_status
 
-def get_args():
-    r = requests.get(f'{base_url}/api/v1/backend_performance/reports/{project_id}?report_id={report_id}',
-                     headers={**headers, 'Content-type': 'application/json'}).json()
-    args = {'base_url': base_url, 'project_id': project_id, 'token': token, 'type': r['type'], 'simulation': r['name'],
-            'build_id': r['build_id'], 'report_id': report_id, 'env': r['environment'], 'comparison_metric': 'pct95',
-            'test_limit': 5, "influx_host": exec_params["influxdb_host"], "influx_port": "8086",
-            "influx_user": exec_params["influxdb_user"], "influx_password": exec_params["influxdb_password"],
-            "influx_db": exec_params["influxdb_database"], "comparison_db": exec_params["influxdb_comparison"],
-            "telegraf_db": exec_params["influxdb_telegraf"], "loki_host": exec_params["loki_host"],
-            "loki_port": exec_params["loki_port"]}
+    def _get_test_status(self) -> TestStatus:
+        resp = requests.get(
+            self.config.report_status_url,
+            headers=self.config.api_headers
+        ).json()
+        return TestStatus(status=resp['message'])
 
-    return args
+    def set_test_status(self, status: TestStatus) -> TestStatus:
+        res = requests.put(
+            self.config.report_status_url,
+            headers=self.config.api_headers,
+            json={"test_status": status.model_dump(exclude_none=True)}
+        )
+        self._test_status = TestStatus.model_validate(res.json())
+        return self._test_status
 
+    def get_influx_client(self) -> InfluxDBClient:
+        return InfluxDBClient(
+            host=self.config.exec_params.influxdb_host,
+            port=self.config.exec_params.influxdb_port,
+            username=self.config.exec_params.influxdb_user,
+            password=self.config.exec_params.influxdb_password,
+            database=self.config.exec_params.influxdb_database
+        )
 
-def get_test_status():
-    url = f'{base_url}/api/v1/backend_performance/report_status/{project_id}/{report_id}'
-    res = requests.get(url, headers=headers)
-    return res.json()
+    def dump_to_csv(self,
+                    file_path: Path,
+                    data_chunk: Generator,
+                    headers: list | None = None
+                    ) -> Tuple[dict, int]:
+        first_row = None
+        last_row = None
+        file_exists = file_path.exists()
+        total_rows = 0
 
+        if not headers:
+            first_row = next(data_chunk)
+            last_row = first_row
+            total_rows += 1
+            headers = first_row.keys()
 
-def run(args):
-    test_name = args["simulation"]
-    with open(results_file_name, "a+") as f:
-        f.write(f"{result_fields}\n")
-    with open(users_file_name, "a+") as f:
-        f.write(f"{user_fields}\n")
-    client = InfluxDBClient(args["influx_host"], args["influx_port"], args["influx_user"], args["influx_password"],
-                            args["influx_db"])
-    requests_last_read_time = '1970-01-01T19:25:26.005Z'
-    users_last_read_time = '1970-01-01T19:25:26.005Z'
-    iteration = 0
-    processing_time = 0
-    req_count = 0
-    start_time, end_time = "", ""
-    while True:
-        try:
-            iteration += 1
-            pause = 60 - processing_time if processing_time < 60 else 1
-            sleep(pause)
-            tik = time()
-            status = get_test_status()
-            print(f"Status: {status['message']}")
-            requests_data = list(
-                client.query(SELECT_REQUESTS_DATA.format(test_name, build_id, requests_last_read_time)).get_points())
-            users_data = list(client.query(SELECT_USERS_DATA.format(build_id, users_last_read_time)).get_points())
-            if not start_time:
-                start_time = requests_data[0]['time']
-            if status["message"] in ["Post processing", "Canceled", "Failed"] and len(requests_data) == 0:
-                print("Looks like tests are done")
-                break
-            if status["message"] in ["Failed"]:
-                print("Got failed status message")
-                break
-            if requests_data:
-                requests_last_read_time = requests_data[-1]['time']
-                users_last_read_time = users_data[-1]['time']
-                req_count += len(requests_data)
+        with open(file_path, 'a', newline='') as csvfile:
+            csv_writer = csv.DictWriter(csvfile, fieldnames=headers)
 
-                # results
-                with open(results_file_name, "a+") as f:
-                    for _res in requests_data:
-                        _result_line = ""
-                        try:
-                            for _field in result_fields.split(","):
-                                if _field == "response_time":
-                                    int(_res[_field])
-                                _result_line += f'{_res[_field]},'
-                            f.write(f"{_result_line[:-1]}\n")
-                        except:
-                            req_count -= 1
+            if not file_exists:
+                csv_writer.writeheader()
+            if first_row:
+                csv_writer.writerow(first_row)
 
-                # users
-                with open(users_file_name, "a+") as f:
-                    for each in users_data:
-                        _result_line = ""
-                        for _field in user_fields.split(","):
-                            _result_line += f'{each[_field]},'
-                        f.write(f"{_result_line[:-1]}\n")
+            for row in data_chunk:
+                if not first_row:
+                    first_row = row
 
-            processing_time = round(time() - tik, 2)
-            print(f"Iteration: {iteration}")
-            print(f"req_count: {req_count}")
-            print(f"Total time - {processing_time} sec")
-        except Exception as e:
-            print(e)
-            sleep(30)
-    _ts = time()
-    try:
-        print("Lets check total requests count ...")
-        total = int(list(client.query(TOTAL_REQUEST_COUNT.format(test_name, build_id)).get_points())[0]["count"])
-        print(f"Total from influx: {total}. Total from PP: {req_count}. {total == req_count}")
-        args['total_requests_count'] = req_count
-        args["start_time"] = start_time
-        args["end_time"] = requests_last_read_time
+                csv_writer.writerow(row)
+                last_row = row
+                total_rows += 1
 
-        # get users count
-        data = client.query(SELECT_USERS_COUNT.format(build_id))
-        data = list(data.get_points())[0]
-        users = int(data['sum'])
+        if file_path == self.config.results_file_path:
+            if not self.requests_start_time:
+                self.requests_start_time = datetime.fromisoformat(first_row['time'].strip('Z'))
 
-        # calculate duration
-        start_time = int(str(datetime.datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp()).split(".")[0])
-        end_time = int(
-            str(datetime.datetime.strptime(requests_last_read_time, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp()).split(".")[0])
-        duration = end_time - start_time
+        return last_row, total_rows
 
-        args["duration"] = duration
-        args["users"] = users
-    except Exception as e:
-        print(e)
-        args['total_requests_count'] = req_count
-        args["start_time"] = requests_last_read_time
-        args["end_time"] = requests_last_read_time
-        args["duration"] = 0
-        args["users"] = 0
-    with open("/tmp/args.json", "w") as f:
-        f.write(dumps(args))
-    other_processing_time = round(time() - _ts, 2)
-    print(f"other_processing_time: {other_processing_time} sec")
+    def query_requests_data(self, client: InfluxDBClient, params: dict) -> Tuple[dict, int]:
+        where = ' where ' + self.influx_queries.where(params)
+        query = self.influx_queries.requests_data.format(where=where)
+        query += f' limit {self.config.influx_query_limit}'
+        req_data = client.query(query).get_points()
+        return self.dump_to_csv(self.config.results_file_path, req_data, self.config.result_fields)
+
+    def query_users_data(self, client: InfluxDBClient, params: dict) -> Tuple[dict, int]:
+        where = ' where ' + self.influx_queries.where(params)
+        query = self.influx_queries.users_data.format(where=where)
+        query += f' limit {self.config.influx_query_limit}'
+        req_data = client.query(query).get_points()
+        return self.dump_to_csv(self.config.users_file_path, req_data, self.config.user_fields)
+
+    async def collect_requests(self, client: InfluxDBClient) -> Tuple[int, float]:
+        total_proc_time = 0
+        total_rows = 0
+
+        params = {
+            'build_id=': self.config.build_id,
+            'time>': 0
+        }
+        empty_attempts = 0
+        sleep_time = self.config.iteration_sleep
+        stop_collection = False
+        while not stop_collection:
+            print('Collecting requests: Sleeping: %s' % sleep_time)
+            await asyncio.sleep(sleep_time)
+            iteration_start = time()
+            row_count = None
+            print('Collecting requests: Start iteration')
+            while row_count is None or row_count == self.config.influx_query_limit:
+                print('Collecting requests: Querying influx')
+                last_row, row_count = self.query_requests_data(
+                    client, params
+                )
+                total_rows += row_count
+                try:
+                    params['time>'] = last_row['time']
+                    self.requests_end_time = datetime.fromisoformat(last_row['time'].strip('Z'))
+                    empty_attempts = 0
+                except TypeError:
+                    if empty_attempts >= self.config.max_empty_attempts:
+                        if not self.test_status.test_finished:
+                            print('Collecting requests: Exceeded max attempts. Assuming test is stuck')
+                        print('Collecting requests: Done')
+                        stop_collection = True
+                    else:
+                        empty_attempts += 1
+                        print('Collecting requests: Got empty response. Attempt: %s' % empty_attempts)
+                        if self.test_status.test_finished:
+                            print('Assuming test finished')
+                            print('Collecting requests: Done')
+                            stop_collection = True
+                proc_time = time() - iteration_start
+                total_proc_time += proc_time
+                print('Collecting requests: proc_time: %s' % proc_time)
+                print('Collecting requests: Requests processed: %s' % row_count)
+
+                sleep_time = max(min(self.config.iteration_sleep, 1), int(self.config.iteration_sleep - proc_time))
+        return total_rows, total_proc_time
+
+    async def collect_users(self, client: InfluxDBClient) -> Tuple[int, float]:
+        total_proc_time = 0
+        total_rows = 0
+        params = {
+            'build_id=': self.config.build_id,
+            'time>': 0
+        }
+        empty_attempts = 0
+        sleep_time = self.config.iteration_sleep + self.config.iteration_sleep // 2  # task delay
+        stop_collection = False
+        while not stop_collection:
+            print('Collecting users: Sleeping: %s' % sleep_time)
+            await asyncio.sleep(sleep_time)
+            iteration_start = time()
+            row_count = None
+            print('Collecting users: Start iteration')
+            while row_count is None or row_count == self.config.influx_query_limit:
+                print('Collecting users: Querying influx')
+                last_row, row_count = self.query_users_data(
+                    client, params
+                )
+                total_rows += row_count
+                try:
+                    params['time>'] = last_row['time']
+                    empty_attempts = 0
+                except TypeError:
+                    if empty_attempts >= self.config.max_empty_attempts:
+                        if not self.test_status.test_finished:
+                            print('Collecting users: Exceeded max attempts. Assuming test is stuck')
+                        print('Collecting users: Done')
+                        stop_collection = True
+                    else:
+                        empty_attempts += 1
+                        print('Collecting users: Got empty response. Attempt: %s' % empty_attempts)
+                        if self.test_status.test_finished:
+                            print('Assuming test finished')
+                            print('Collecting users: Done')
+                            stop_collection = True
+                proc_time = time() - iteration_start
+                total_proc_time += proc_time
+                print('Collecting users: proc_time: %s' % proc_time)
+                print('Collecting users: Requests processed: %s' % row_count)
+
+                sleep_time = max(min(self.config.iteration_sleep, 1), int(self.config.iteration_sleep - proc_time))
+        return total_rows, total_proc_time
+
+    def collect_users_count(self, client: InfluxDBClient) -> int:
+        where = ' where ' + self.influx_queries.where({'build_id=': self.config.build_id})
+        query = self.influx_queries.users_count.format(where=where)
+        req_data = client.query(query).get_points()
+        return int(next(req_data)['sum'])
+
+    async def accumulate_data(self) -> None:
+        client = self.get_influx_client()
+
+        requests_task = asyncio.Task(self.collect_requests(client))
+        users_task = asyncio.Task(self.collect_users(client))
+
+        await asyncio.gather(requests_task, users_task)
+        req_total_rows, req_total_proc_time = requests_task.result()
+        print(f'Requests start time: {self.requests_start_time}')
+        print(f'Requests end time: {self.requests_end_time}')
+        print(f'Requests collector processed {req_total_rows} rows | processing_time {req_total_proc_time:.2}s')
+        usr_total_rows, usr_total_proc_time = users_task.result()
+        print(f'Users collector processed {usr_total_rows} rows | processing_time {usr_total_proc_time:.2}s')
+        proc_time = time()
+        users_count = self.collect_users_count(client)
+
+        all_args = AllArgs.model_validate({
+            **self.config.model_dump(),
+            **self.config.exec_params.model_dump(),
+            **self.test_data.model_dump(),
+            'total_requests_count': req_total_rows,
+            'start_time': self.requests_start_time,
+            'end_time': self.requests_end_time,
+            'users': users_count
+        })
+        with open(self.config.args_file_path, 'w') as out:
+            out.write(all_args.model_dump_json(indent=2, exclude={'exec_params'}))
+
+        print(f'User count and all args dump done | processing_time: {time() - proc_time:.2}s')
 
 
 if __name__ == '__main__':
-    args = get_args()
-    run(args)
+    collector = Collector()
+    asyncio.run(collector.accumulate_data())

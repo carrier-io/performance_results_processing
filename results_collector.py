@@ -8,7 +8,7 @@ from influxdb import InfluxDBClient
 from time import time
 from datetime import datetime
 
-from models import CollectorConfig, TestData, InfluxQueries, TestStatus, AllArgs
+from models import CollectorConfig, TestData, InfluxQueries, TestStatus, AllArgs, TestStatuses
 from utils import build_api_url
 
 
@@ -25,6 +25,14 @@ class Collector:
         self.test_data = self._fetch_test_data()
         self._test_status = self.test_data.test_status
         print('Test status: ', self._test_status)
+        if not self._test_status.test_finished and self.config.manual_run:
+            new_status = TestStatus(
+                status=TestStatuses.POST_PROCESSING,
+                percentage=80,
+                description='Manually triggered post processing'
+            )
+            print(f'Test seems to be in progress. Setting status to {new_status.status}')
+            self.set_test_status(new_status)
         self.influx_queries = InfluxQueries(
             test_name=self.test_data.name,
             request_data_fields=self.config.result_fields,
@@ -50,7 +58,7 @@ class Collector:
         delta = datetime.utcnow() - self._test_status._updated
         if delta.total_seconds() > self.config.test_status_update_interval:
             self._test_status = self._get_test_status()
-            print('Updating test status:', self._test_status)
+            print('Refreshing test status:', self._test_status)
         return self._test_status
 
     def _get_test_status(self) -> TestStatus:
@@ -142,7 +150,7 @@ class Collector:
         sleep_time = self.config.iteration_sleep
         stop_collection = False
         while not stop_collection:
-            print('Collecting requests: Sleeping: %s' % sleep_time)
+            print(f'Collecting requests: Sleeping: {sleep_time}')
             await asyncio.sleep(sleep_time)
             iteration_start = time()
             row_count = None
@@ -165,17 +173,21 @@ class Collector:
                         stop_collection = True
                     else:
                         empty_attempts += 1
-                        print('Collecting requests: Got empty response. Attempt: %s' % empty_attempts)
+                        print(f'Collecting requests: Got empty response. '
+                              f'Attempt: {empty_attempts}/{self.config.max_empty_attempts}')
                         if self.test_status.test_finished:
                             print('Assuming test finished')
                             print('Collecting requests: Done')
                             stop_collection = True
                 proc_time = time() - iteration_start
                 total_proc_time += proc_time
-                print('Collecting requests: proc_time: %s' % proc_time)
-                print('Collecting requests: Requests processed: %s' % row_count)
+                print(f'Collecting requests: proc_time: {proc_time:.3}s')
+                print(f'Collecting requests: Requests processed: {row_count}')
 
-                sleep_time = max(min(self.config.iteration_sleep, 1), int(self.config.iteration_sleep - proc_time))
+                sleep_time = max(
+                    min(self.config.iteration_sleep, 1),
+                    int(self.config.iteration_sleep - proc_time)
+                )
         return total_rows, total_proc_time
 
     async def collect_users(self, client: InfluxDBClient) -> Tuple[int, float]:
@@ -189,7 +201,7 @@ class Collector:
         sleep_time = self.config.iteration_sleep + self.config.iteration_sleep // 2  # task delay
         stop_collection = False
         while not stop_collection:
-            print('Collecting users: Sleeping: %s' % sleep_time)
+            print(f'Collecting users: Sleeping: {sleep_time}')
             await asyncio.sleep(sleep_time)
             iteration_start = time()
             row_count = None
@@ -211,17 +223,21 @@ class Collector:
                         stop_collection = True
                     else:
                         empty_attempts += 1
-                        print('Collecting users: Got empty response. Attempt: %s' % empty_attempts)
+                        print(f'Collecting users: Got empty response. '
+                              f'Attempt: {empty_attempts}/{self.config.max_empty_attempts}')
                         if self.test_status.test_finished:
                             print('Assuming test finished')
                             print('Collecting users: Done')
                             stop_collection = True
                 proc_time = time() - iteration_start
                 total_proc_time += proc_time
-                print('Collecting users: proc_time: %s' % proc_time)
-                print('Collecting users: Requests processed: %s' % row_count)
+                print(f'Collecting users: proc_time: {proc_time:.3}s')
+                print(f'Collecting users: Users processed: {row_count}')
 
-                sleep_time = max(min(self.config.iteration_sleep, 1), int(self.config.iteration_sleep - proc_time))
+                sleep_time = max(
+                    min(self.config.iteration_sleep, 1),
+                    int(self.config.iteration_sleep - proc_time)
+                )
         return total_rows, total_proc_time
 
     def collect_users_count(self, client: InfluxDBClient) -> int:

@@ -1,16 +1,27 @@
 import json
+from enum import StrEnum
 from os import environ
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, field_validator, computed_field, ConfigDict, model_validator
+from pydantic import BaseModel, field_validator, computed_field, ConfigDict, model_validator, constr
 
 from utils import build_api_url
 from datetime import datetime
 
 
+class TestStatuses(StrEnum):
+    IN_PROGRESS = 'in progress...'
+    CANCELLED = 'cancelled'
+    CANCELED = 'canceled'
+    FAILED = 'failed'
+    FINISHED = 'finished'
+    POST_PROCESSING = 'post processing'
+    POST_PROCESSING_MANUAL = 'post processing (manual)'
+
+
 class TestStatus(BaseModel):
-    status: str
+    status: constr(to_lower=True)
     percentage: Optional[int] = None
     description: Optional[str] = None
 
@@ -20,9 +31,18 @@ class TestStatus(BaseModel):
 
     @property
     def test_finished(self) -> bool:
-        return self.status.lower() in {
-            "post processing", "failed",
-            "canceled", "cancelled",
+        # return self.status in {
+        #     'post processing', 'failed',
+        #     'canceled', 'cancelled',
+        #     'finished'
+        # }
+        return self.status in {
+            TestStatuses.POST_PROCESSING,
+            TestStatuses.FAILED,
+            TestStatuses.CANCELLED,
+            TestStatuses.CANCELED,
+            TestStatuses.FINISHED,
+            TestStatuses.POST_PROCESSING_MANUAL,
         }
 
 

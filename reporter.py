@@ -18,7 +18,7 @@ def finish_test_report(args, response_times, test_status):
         'Authorization': f'bearer {args["token"]}',
         'Content-type': 'application/json'
     }
-    lg_type = args["influx_db"].split("_")[0] if "_" in args["influx_db"] else args["influx_db"]
+    lg_type = args["influxdb_database"].split("_")[0] if "_" in args["influxdb_database"] else args["influxdb_database"]
     data = {'build_id': args["build_id"], 'test_name': args["simulation"], 'lg_type': lg_type,
             'missed': int(0),
             'test_status': test_status,
@@ -122,7 +122,7 @@ def reporting(data_manager, args, aggregated_test_data, integrations, quality_ga
 
 
 def get_loki_logger(args):
-    loki_context = {"url": f"http://{args['influx_host']}:3100/loki/api/v1/push",
+    loki_context = {"url": f"http://{args['loki_host']}:{args['loki_port']}/loki/api/v1/push",
                     "hostname": "post-processor", 
                     "labels": {"build_id": args['build_id'],
                                "project": args['project_id'],

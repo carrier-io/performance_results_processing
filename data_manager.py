@@ -63,14 +63,14 @@ class DataManager():
         self.client = self._get_client()
 
     def _get_client(self):
-        return InfluxDBClient(host=self.args["influx_host"],
-                              port=self.args['influx_port'],
-                              username=self.args['influx_user'],
-                              password=self.args['influx_password'])
+        return InfluxDBClient(host=self.args["influxdb_host"],
+                              port=self.args['influxdb_port'],
+                              username=self.args['influxdb_user'],
+                              password=self.args['influxdb_password'])
 
     def delete_test_data(self):
-        self.client.switch_database(self.args['influx_db'])
-        self.client.query(DELETE_TEST_DATA.format(self.args["simulation"], self.build_id))
+        self.client.switch_database(self.args['influxdb_database'])
+        self.client.query(DELETE_TEST_DATA.format(self.args["name"], self.build_id))
         self.client.query(DELETE_USERS_DATA.format(self.args["build_id"]))
         self.logger.info("Test data were deleted")
 
@@ -101,12 +101,12 @@ class DataManager():
 
     def get_baseline(self):
         baseline_url = f"{self.base_url}/api/v1/backend_performance/baseline/{self.project_id}?" \
-                    f"test_name={self.args['simulation']}&env={self.args['env']}"
+                    f"test_name={self.args['name']}&env={self.args['environment']}"
         res = requests.get(baseline_url, headers={**self.headers, 'Content-type': 'application/json'}).json()
         return res["baseline"]
 
     def upload_test_results(self, filename):
-        bucket = self.args['simulation'].replace("_", "").lower()
+        bucket = self.args['name'].replace("_", "").lower()
         import gzip
         import shutil
         with open(filename, 'rb') as f_in:
@@ -129,8 +129,8 @@ class DataManager():
             influx_record = {
                 "measurement": "api_comparison",
                 "tags": {
-                    "simulation": self.args['simulation'],
-                    "env": self.args['env'],
+                    "simulation": self.args['name'],
+                    "env": self.args['environment'],
                     "users": self.args["users"],
                     "test_type": self.args['type'],
                     "build_id": self.build_id,
@@ -164,8 +164,8 @@ class DataManager():
 
         # Summary
         error_count = sum(point['fields']['ko'] for point in points)
-        points.append({"measurement": "api_comparison", "tags": {"simulation": self.args['simulation'],
-                                                                "env": self.args['env'],
+        points.append({"measurement": "api_comparison", "tags": {"simulation": self.args['name'],
+                                                                "env": self.args['environment'],
                                                                 "users": self.args["users"],
                                                                 "test_type": self.args['type'],
                                                                 "duration": self.args['duration'],
@@ -192,12 +192,12 @@ class DataManager():
                                   "pct90": response_times["pct90"],
                                   "pct95": response_times["pct95"],
                                   "pct99": response_times["pct99"]}})
-        self.client.switch_database(self.args['comparison_db'])
+        self.client.switch_database(self.args['influxdb_comparison'])
         try:
             self.client.write_points(points)
         except Exception as e:
             self.logger.error(e)
-            self.logger.error(f'Failed connection to {self.args["influx_host"]}, database - comparison')
+            self.logger.error(f'Failed connection to {self.args["influxdb_host"]}, database - comparison')
 
         # Send comparison data to minio
         fields = ['time', '1xx', '2xx', '3xx', '4xx', '5xx', 'NaN', 'build_id', 'duration',
@@ -215,7 +215,7 @@ class DataManager():
 
     def send_engine_health_cpu(self):
         fields = "time,system,user,softirq,iowait,host"
-        self.client.switch_database(self.args['telegraf_db'])
+        self.client.switch_database(self.args['influxdb_telegraf'])
         for each in ["1s", "5s", "30s", "1m", "5m", "10m"]:
             _results = self.client.query(SELECT_HEALTH_CPU.format(self.build_id, self.start_time, self.end_time, each))
             with open(f"/tmp/health_cpu_{self.build_id}_{each}.csv", "w", newline='') as f:
@@ -225,12 +225,12 @@ class DataManager():
                     for line in series:
                         writer.writerow({**line, **groups})
             self.upload_test_results(f"/tmp/health_cpu_{self.build_id}_{each}.csv")
-        self.client.switch_database(self.args['influx_db'])
+        self.client.switch_database(self.args['influxdb_database'])
         print("********engine_health_cpu done")
 
     def send_engine_health_memory(self):
         fields = "time,heap memory,non-heap memory,host"
-        self.client.switch_database(self.args['telegraf_db'])
+        self.client.switch_database(self.args['influxdb_telegraf'])
         _results = self.client.query(SELECT_HEALTH_MEMORY.format(self.build_id, self.start_time, self.end_time))
         with open(f"/tmp/health_memory_{self.build_id}.csv", "w", newline='') as f:
             writer = csv.DictWriter(f, fieldnames=fields.split(','))
@@ -239,12 +239,12 @@ class DataManager():
                 for line in series:
                     writer.writerow({**line, **groups})
         self.upload_test_results(f"/tmp/health_memory_{self.build_id}.csv")
-        self.client.switch_database(self.args['influx_db'])
+        self.client.switch_database(self.args['influxdb_database'])
         print("********engine_health_memory done")
 
     def send_engine_health_load(self):
         fields = "time,load1,load5,load15,host"
-        self.client.switch_database(self.args['telegraf_db'])
+        self.client.switch_database(self.args['influxdb_telegraf'])
         for each in ["1s", "5s", "30s", "1m", "5m", "10m"]:
             _results = self.client.query(SELECT_HEALTH_LOAD.format(self.build_id, self.start_time, self.end_time, each))
             with open(f"/tmp/health_load_{self.build_id}_{each}.csv", "w", newline='') as f:
@@ -254,7 +254,7 @@ class DataManager():
                     for line in series:
                         writer.writerow({**line, **groups})
             self.upload_test_results(f"/tmp/health_load_{self.build_id}_{each}.csv")
-        self.client.switch_database(self.args['influx_db'])
+        self.client.switch_database(self.args['influxdb_database'])
         print("********engine_health_load done")
 
 
@@ -263,7 +263,7 @@ class DataManager():
         data = {
             "direction": "BACKWARD",
             "limit": 5000,
-            "query": '{filename="/tmp/' + self.args['simulation'] + '.log"}',
+            "query": '{filename="/tmp/' + self.args['name'] + '.log"}',
             "start": self.start_time,
             "end": self.end_time
         }
@@ -306,7 +306,7 @@ class DataManager():
         total_violated = 0
         headers = {'Authorization': f'bearer {self.token}'}
         thresholds_url = f"{self.base_url}/api/v1/backend_performance/thresholds/{self.project_id}?" \
-                        f"test={self.args['simulation']}&env={self.args['env']}&order=asc"
+                        f"test={self.args['name']}&env={self.args['environment']}&order=asc"
         _thresholds = requests.get(thresholds_url, headers={**headers, 'Content-type': 'application/json'}).json()
 
         def compile_violation(request, th, total_checked, total_violated, compare_with_thresholds, 

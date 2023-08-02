@@ -19,7 +19,7 @@ def finish_test_report(args, response_times, test_status):
         'Content-type': 'application/json'
     }
     lg_type = args["influxdb_database"].split("_")[0] if "_" in args["influxdb_database"] else args["influxdb_database"]
-    data = {'build_id': args["build_id"], 'test_name': args["simulation"], 'lg_type': lg_type,
+    data = {'build_id': args["build_id"], 'test_name': args["name"], 'lg_type': lg_type,
             'missed': int(0),
             'test_status': test_status,
             'vusers': args["users"],
@@ -81,7 +81,7 @@ def reporting_junit(data_manager, args, current_test_results, aggregated_test_da
     headers = {'Authorization': f'bearer {args["token"]}'} if args["token"] else {}
     logger.info('Start reporting to JUnit')
     try:
-        results_bucket = args['simulation'].replace("_", "").lower()
+        results_bucket = args['name'].replace("_", "").lower()
         _, _, thresholds, _ = data_manager.compare_with_thresholds(current_test_results, aggregated_test_data, 
                                                                    quality_gate_config, True)
         report = JUnitReporter.create_report(thresholds, args['build_id'], all_checks, reasons_to_fail_report)

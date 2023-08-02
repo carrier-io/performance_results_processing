@@ -25,13 +25,14 @@ class Collector:
         self.test_data = self._fetch_test_data()
         self._test_status = self.test_data.test_status
         print('Test status: ', self._test_status)
-        if not self._test_status.test_finished and self.config.manual_run:
+        # if not self._test_status.test_finished and self.config.manual_run:
+        if self.config.manual_run:
             new_status = TestStatus(
                 status=TestStatuses.POST_PROCESSING,
                 percentage=80,
                 description='Manually triggered post processing'
             )
-            print(f'Test seems to be in progress. Setting status to {new_status.status}')
+            print(f'Setting status to {new_status.status}')
             self.set_test_status(new_status)
         self.influx_queries = InfluxQueries(
             test_name=self.test_data.name,

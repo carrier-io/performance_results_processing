@@ -94,7 +94,7 @@ class CollectorConfig(BaseModel):
             'manual_run', 'max_empty_attempts',
             'influx_query_limit', 'iteration_sleep',
             'test_status_update_interval'
-        }}
+        } if i in environ}
         return cls(**env_dict)
 
     result_fields: list = [

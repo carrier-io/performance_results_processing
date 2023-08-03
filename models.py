@@ -2,7 +2,7 @@ import json
 from enum import StrEnum
 from os import environ
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Iterable
 
 from pydantic import BaseModel, field_validator, computed_field, ConfigDict, model_validator, constr
 
@@ -31,11 +31,6 @@ class TestStatus(BaseModel):
 
     @property
     def test_finished(self) -> bool:
-        # return self.status in {
-        #     'post processing', 'failed',
-        #     'canceled', 'cancelled',
-        #     'finished'
-        # }
         return self.status in {
             TestStatuses.POST_PROCESSING,
             TestStatuses.FAILED,
@@ -113,7 +108,8 @@ class CollectorConfig(BaseModel):
             'token', 'report_id', 'exec_params',
             'manual_run', 'max_empty_attempts',
             'influx_query_limit', 'iteration_sleep',
-            'test_status_update_interval'
+            'test_status_update_interval', 'logger_hostname',
+            'logger_stop_words'
         } if i in environ}
         return cls(**env_dict)
 
@@ -135,6 +131,8 @@ class CollectorConfig(BaseModel):
     iteration_sleep: int = 60
     test_status_update_interval: int = 60
     output_path: Path | str = Path('/', 'tmp')
+    logger_hostname: str = 'post-processor'
+    logger_stop_words: Iterable = tuple()
 
     @model_validator(mode='before')
     @classmethod
@@ -159,6 +157,13 @@ class CollectorConfig(BaseModel):
         if isinstance(value, str):
             return json.loads(value)
         return value
+
+    @field_validator('logger_stop_words', mode='before')
+    @classmethod
+    def parse_json_array(cls, value: str | Iterable) -> set:
+        if isinstance(value, str):
+            return json.loads(value)
+        return set(value)
 
     @computed_field
     @property

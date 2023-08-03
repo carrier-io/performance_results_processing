@@ -1,10 +1,9 @@
 import datetime
+import json
 import operator
 import requests
 import csv
 from influxdb import InfluxDBClient
-from os import environ
-from json import loads
 
 
 DELETE_TEST_DATA = "delete from {} where build_id='{}'"
@@ -75,9 +74,8 @@ class DataManager():
         self.logger.info("Test data were deleted")
 
     @staticmethod
-    def get_args():
-        with open("/tmp/args.json", "r") as f:
-            return loads(f.read())
+    def get_args(json_path: str = '/tmp/args.json') -> dict:
+        return json.load(open(json_path, "r"))
 
     @staticmethod
     def get_response_times():

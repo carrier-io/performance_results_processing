@@ -9,7 +9,7 @@ from time import time
 from datetime import datetime
 
 from models import CollectorConfig, TestData, InfluxQueries, TestStatus, AllArgs, TestStatuses
-from utils import build_api_url
+from utils import build_api_url, get_loki_logger
 
 
 class Collector:
@@ -22,10 +22,19 @@ class Collector:
         else:
             self.config = CollectorConfig.from_env()
 
+        # self.logger = get_loki_logger(
+        #     loki_host=self.config.exec_params.loki_host,
+        #     loki_port=self.config.exec_params.loki_port,
+        #     build_id=self.config.build_id,
+        #     report_id=self.config.report_id,
+        #     project_id=self.config.project_id,
+        #     hostname=self.config.logger_hostname,
+        #     logger_stop_words=self.config.logger_stop_words
+        # )
+
         self.test_data = self._fetch_test_data()
         self._test_status = self.test_data.test_status
         print('Test status: ', self._test_status)
-        # if not self._test_status.test_finished and self.config.manual_run:
         if self.config.manual_run:
             new_status = TestStatus(
                 status=TestStatuses.POST_PROCESSING,
@@ -145,7 +154,6 @@ class Collector:
     async def collect_requests(self, client: InfluxDBClient) -> Tuple[int, float]:
         total_proc_time = 0
         total_rows = 0
-
         params = {
             'build_id=': self.config.build_id,
             'time>': 0

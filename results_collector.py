@@ -41,7 +41,7 @@ class Collector:
                 percentage=80,
                 description='Manually triggered post processing'
             )
-            print(f'Setting status to {new_status.status}')
+            print(f'Setting status to: {new_status.status}')
             self.set_test_status(new_status)
         self.influx_queries = InfluxQueries(
             test_name=self.test_data.name,
@@ -79,12 +79,16 @@ class Collector:
         return TestStatus(status=resp['message'])
 
     def set_test_status(self, status: TestStatus) -> TestStatus:
-        res = requests.put(
+        resp = requests.put(
             self.config.report_status_url,
             headers=self.config.api_headers,
             json={"test_status": status.model_dump(exclude_none=True)}
         )
-        self._test_status = TestStatus.model_validate(res.json())
+        if resp.ok:
+            new_status = resp.json()['message'].lower()
+            if not self.test_status.status == new_status:
+                print(f'Statuses are not equal: {self.test_status.status} != {new_status}')
+            self._test_status = status
         return self._test_status
 
     def get_influx_client(self) -> InfluxDBClient:

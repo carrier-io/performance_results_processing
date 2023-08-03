@@ -38,7 +38,9 @@ class Collector:
 
         self.test_data = self._fetch_test_data()
         self._test_status = self.test_data.test_status
-        self.logger.info(f'Test status: {self._test_status}')
+        self.logger.info(f'Test status: {self.test_status}')
+        self.exit_if_needed()
+
         if self.config.manual_run:
             new_status = TestStatus(
                 status=TestStatuses.POST_PROCESSING,
@@ -75,7 +77,13 @@ class Collector:
         if delta.total_seconds() > self.config.test_status_update_interval:
             self._test_status = self._get_test_status()
             self.logger.info(f'Refreshing test status: {self._test_status}')
+            self.exit_if_needed()
         return self._test_status
+
+    def exit_if_needed(self) -> None:
+        if self._test_status.test_finalized and not self.config.manual_run:
+            self.logger.critical('Test got the finalized status. This post processor will be terminated')
+            exit(32)
 
     def _get_test_status(self) -> TestStatus:
         resp = requests.get(

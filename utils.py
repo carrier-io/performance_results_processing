@@ -1,3 +1,4 @@
+import urllib.parse
 from typing import Iterable
 
 from centry_loki import log_loki
@@ -8,7 +9,7 @@ def build_api_url(
         api_version: int = 1, trailing_slash: bool = False,
         skip_mode: bool = False
 ) -> str:
-    struct = ['/api', f'v{api_version}', plugin, file_name]
+    struct = ['/api', f'v{api_version}', plugin, urllib.parse.quote(file_name)]
     if not skip_mode:
         struct.append(mode)
     url = '/'.join(map(str, struct))

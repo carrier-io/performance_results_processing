@@ -40,6 +40,15 @@ class TestStatus(BaseModel):
             TestStatuses.POST_PROCESSING_MANUAL,
         }
 
+    @property
+    def test_finalized(self) -> bool:
+        return self.status in {
+            TestStatuses.FAILED,
+            TestStatuses.CANCELLED,
+            TestStatuses.CANCELED,
+            TestStatuses.FINISHED,
+        }
+
 
 class InfluxQueries:
     _users_count = r'''

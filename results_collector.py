@@ -121,7 +121,10 @@ class Collector:
 
         if file_path == self.config.results_file_path:
             if not self.requests_start_time:
-                self.requests_start_time = datetime.fromisoformat(first_row['time'].strip('Z'))
+                try:
+                    self.requests_start_time = datetime.fromisoformat(first_row['time'].strip('Z'))
+                except TypeError:
+                    ...
 
         return last_row, total_rows
 
@@ -245,7 +248,10 @@ class Collector:
         where = ' where ' + self.influx_queries.where({'build_id=': self.config.build_id})
         query = self.influx_queries.users_count.format(where=where)
         req_data = client.query(query).get_points()
-        return int(next(req_data)['sum'])
+        try:
+            return int(next(req_data)['sum'])
+        except StopIteration:
+            return 0
 
     async def accumulate_data(self) -> None:
         client = self.get_influx_client()
@@ -268,8 +274,8 @@ class Collector:
             **self.config.exec_params.model_dump(),
             **self.test_data.model_dump(),
             'total_requests_count': req_total_rows,
-            'start_time': self.requests_start_time,
-            'end_time': self.requests_end_time,
+            'start_time': self.requests_start_time or 0,
+            'end_time': self.requests_end_time or 0,
             'users': users_count
         })
         with open(self.config.args_file_path, 'w') as out:

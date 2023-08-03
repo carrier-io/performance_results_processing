@@ -163,7 +163,7 @@ class CollectorConfig(BaseModel):
     @computed_field
     @property
     def results_file_path(self) -> Path:
-        return self.output_path.joinpath(f'results_{self.build_id}.csv')
+        return self.output_path.joinpath(f'{self.build_id}.csv')
 
     @computed_field
     @property

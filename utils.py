@@ -11,7 +11,7 @@ def build_api_url(
     struct = ['/api', f'v{api_version}', plugin, file_name]
     if not skip_mode:
         struct.append(mode)
-    url = '/'.join(struct)
+    url = '/'.join(map(str, struct))
     if trailing_slash:
         url += '/'
     return url

@@ -1,5 +1,6 @@
 import asyncio
 import csv
+import logging
 from pathlib import Path
 from typing import Generator, Tuple
 
@@ -22,26 +23,29 @@ class Collector:
         else:
             self.config = CollectorConfig.from_env()
 
-        # self.logger = get_loki_logger(
-        #     loki_host=self.config.exec_params.loki_host,
-        #     loki_port=self.config.exec_params.loki_port,
-        #     build_id=self.config.build_id,
-        #     report_id=self.config.report_id,
-        #     project_id=self.config.project_id,
-        #     hostname=self.config.logger_hostname,
-        #     logger_stop_words=self.config.logger_stop_words
-        # )
+        try:
+            self.logger = get_loki_logger(
+                loki_host=self.config.exec_params.loki_host,
+                loki_port=self.config.exec_params.loki_port,
+                build_id=self.config.build_id,
+                report_id=self.config.report_id,
+                project_id=self.config.project_id,
+                hostname=self.config.logger_hostname,
+                logger_stop_words=self.config.logger_stop_words
+            )
+        except:
+            self.logger = logging.getLogger()
 
         self.test_data = self._fetch_test_data()
         self._test_status = self.test_data.test_status
-        print('Test status: ', self._test_status)
+        self.logger.info(f'Test status: {self._test_status}')
         if self.config.manual_run:
             new_status = TestStatus(
                 status=TestStatuses.POST_PROCESSING,
                 percentage=80,
                 description='Manually triggered post processing'
             )
-            print(f'Setting status to: {new_status.status}')
+            self.logger.info(f'Setting status to: {new_status.status}')
             self.set_test_status(new_status)
         self.influx_queries = InfluxQueries(
             test_name=self.test_data.name,
@@ -50,6 +54,8 @@ class Collector:
         )
         self.requests_start_time = None
         self.requests_end_time = None
+        if self.config.debug:
+            self.logger.info(f'Config:\n{self.config.model_dump_json(indent=2)}')
 
     def _fetch_test_data(self) -> TestData:
         url = '/'.join(map(str, [
@@ -68,7 +74,7 @@ class Collector:
         delta = datetime.utcnow() - self._test_status._updated
         if delta.total_seconds() > self.config.test_status_update_interval:
             self._test_status = self._get_test_status()
-            print('Refreshing test status:', self._test_status)
+            self.logger.info(f'Refreshing test status: {self._test_status}')
         return self._test_status
 
     def _get_test_status(self) -> TestStatus:
@@ -87,7 +93,7 @@ class Collector:
         if resp.ok:
             new_status = resp.json()['message'].lower()
             if not self.test_status.status == new_status:
-                print(f'Statuses are not equal: {self.test_status.status} != {new_status}')
+                self.logger.warning(f'Statuses are not equal: {self.test_status.status} != {new_status}')
             self._test_status = status
         return self._test_status
 
@@ -166,13 +172,13 @@ class Collector:
         sleep_time = self.config.iteration_sleep
         stop_collection = False
         while not stop_collection:
-            print(f'Collecting requests: Sleeping: {sleep_time}')
+            self.logger.info(f'Collecting requests: Sleeping: {sleep_time}')
             await asyncio.sleep(sleep_time)
             iteration_start = time()
             row_count = None
-            print('Collecting requests: Start iteration')
+            self.logger.info('Collecting requests: Start iteration')
             while row_count is None or row_count == self.config.influx_query_limit:
-                print('Collecting requests: Querying influx')
+                self.logger.info('Collecting requests: Querying influx')
                 last_row, row_count = self.query_requests_data(
                     client, params
                 )
@@ -184,21 +190,21 @@ class Collector:
                 except TypeError:
                     if empty_attempts >= self.config.max_empty_attempts:
                         if not self.test_status.test_finished:
-                            print('Collecting requests: Exceeded max attempts. Assuming test is stuck')
-                        print('Collecting requests: Done')
+                            self.logger.info('Collecting requests: Exceeded max attempts. Assuming test is stuck')
+                        self.logger.info('Collecting requests: Done')
                         stop_collection = True
                     else:
                         empty_attempts += 1
-                        print(f'Collecting requests: Got empty response. '
-                              f'Attempt: {empty_attempts}/{self.config.max_empty_attempts}')
+                        self.logger.info(f'Collecting requests: Got empty response. '
+                                         f'Attempt: {empty_attempts}/{self.config.max_empty_attempts}')
                         if self.test_status.test_finished:
-                            print('Assuming test finished')
-                            print('Collecting requests: Done')
+                            self.logger.info('Assuming test finished')
+                            self.logger.info('Collecting requests: Done')
                             stop_collection = True
                 proc_time = time() - iteration_start
                 total_proc_time += proc_time
-                print(f'Collecting requests: proc_time: {proc_time:.3}s')
-                print(f'Collecting requests: Requests processed: {row_count}')
+                self.logger.info(f'Collecting requests: proc_time: {proc_time:.3}s')
+                self.logger.info(f'Collecting requests: Requests processed: {row_count}')
 
                 sleep_time = max(
                     min(self.config.iteration_sleep, 1),
@@ -217,13 +223,13 @@ class Collector:
         sleep_time = self.config.iteration_sleep + self.config.iteration_sleep // 2  # task delay
         stop_collection = False
         while not stop_collection:
-            print(f'Collecting users: Sleeping: {sleep_time}')
+            self.logger.info(f'Collecting users: Sleeping: {sleep_time}')
             await asyncio.sleep(sleep_time)
             iteration_start = time()
             row_count = None
-            print('Collecting users: Start iteration')
+            self.logger.info('Collecting users: Start iteration')
             while row_count is None or row_count == self.config.influx_query_limit:
-                print('Collecting users: Querying influx')
+                self.logger.info('Collecting users: Querying influx')
                 last_row, row_count = self.query_users_data(
                     client, params
                 )
@@ -234,21 +240,21 @@ class Collector:
                 except TypeError:
                     if empty_attempts >= self.config.max_empty_attempts:
                         if not self.test_status.test_finished:
-                            print('Collecting users: Exceeded max attempts. Assuming test is stuck')
-                        print('Collecting users: Done')
+                            self.logger.info('Collecting users: Exceeded max attempts. Assuming test is stuck')
+                        self.logger.info('Collecting users: Done')
                         stop_collection = True
                     else:
                         empty_attempts += 1
-                        print(f'Collecting users: Got empty response. '
-                              f'Attempt: {empty_attempts}/{self.config.max_empty_attempts}')
+                        self.logger.info(f'Collecting users: Got empty response. '
+                                         f'Attempt: {empty_attempts}/{self.config.max_empty_attempts}')
                         if self.test_status.test_finished:
-                            print('Assuming test finished')
-                            print('Collecting users: Done')
+                            self.logger.info('Assuming test finished')
+                            self.logger.info('Collecting users: Done')
                             stop_collection = True
                 proc_time = time() - iteration_start
                 total_proc_time += proc_time
-                print(f'Collecting users: proc_time: {proc_time:.3}s')
-                print(f'Collecting users: Users processed: {row_count}')
+                self.logger.info(f'Collecting users: proc_time: {proc_time:.3}s')
+                self.logger.info(f'Collecting users: Users processed: {row_count}')
 
                 sleep_time = max(
                     min(self.config.iteration_sleep, 1),
@@ -273,11 +279,12 @@ class Collector:
 
         await asyncio.gather(requests_task, users_task)
         req_total_rows, req_total_proc_time = requests_task.result()
-        print(f'Requests start time: {self.requests_start_time}')
-        print(f'Requests end time: {self.requests_end_time}')
-        print(f'Requests collector processed {req_total_rows} rows | processing_time {req_total_proc_time:.2}s')
+        self.logger.info(f'Requests start time: {self.requests_start_time}')
+        self.logger.info(f'Requests end time: {self.requests_end_time}')
+        self.logger.info(
+            f'Requests collector processed {req_total_rows} rows | processing_time {req_total_proc_time:.2}s')
         usr_total_rows, usr_total_proc_time = users_task.result()
-        print(f'Users collector processed {usr_total_rows} rows | processing_time {usr_total_proc_time:.2}s')
+        self.logger.info(f'Users collector processed {usr_total_rows} rows | processing_time {usr_total_proc_time:.2}s')
         proc_time = time()
         users_count = self.collect_users_count(client)
 
@@ -293,7 +300,8 @@ class Collector:
         with open(self.config.args_file_path, 'w') as out:
             out.write(all_args.model_dump_json(indent=2, exclude={'exec_params'}))
 
-        print(f'User count and all args dump done | processing_time: {time() - proc_time:.2}s')
+        self.logger.info(f'User count and all args dump done | processing_time: {time() - proc_time:.2}s')
+        self.logger.info(f'Total processing time: {sum((proc_time, req_total_proc_time, usr_total_proc_time))}')
 
 
 if __name__ == '__main__':

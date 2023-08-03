@@ -109,7 +109,7 @@ class CollectorConfig(BaseModel):
             'manual_run', 'max_empty_attempts',
             'influx_query_limit', 'iteration_sleep',
             'test_status_update_interval', 'logger_hostname',
-            'logger_stop_words'
+            'logger_stop_words', 'debug'
         } if i in environ}
         return cls(**env_dict)
 
@@ -133,6 +133,7 @@ class CollectorConfig(BaseModel):
     output_path: Path | str = Path('/', 'tmp')
     logger_hostname: str = 'post-processor'
     logger_stop_words: Iterable = tuple()
+    debug: bool = False
 
     @model_validator(mode='before')
     @classmethod

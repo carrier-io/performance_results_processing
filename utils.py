@@ -23,7 +23,7 @@ def get_loki_logger(loki_host: str,
                     loki_port: int = 3100,
                     hostname: str = 'post-processor',
                     loki_api_path: str = '/api/v1/push',
-                    logger_stop_words: Iterable = (),
+                    logger_stop_words: list | set | tuple = tuple(),
                     **kwargs) -> 'Logger':
     context = {
         'url': f'{loki_host}:{loki_port}/loki{loki_api_path}',

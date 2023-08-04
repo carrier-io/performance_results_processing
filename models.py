@@ -141,7 +141,7 @@ class CollectorConfig(BaseModel):
     test_status_update_interval: int = 60
     output_path: Path | str = Path('/', 'tmp')
     logger_hostname: str = 'post-processor'
-    logger_stop_words: Iterable = tuple()
+    logger_stop_words: list | set | tuple = tuple()
     debug: bool = False
 
     @model_validator(mode='before')

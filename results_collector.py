@@ -308,8 +308,9 @@ class Collector:
         with open(self.config.args_file_path, 'w') as out:
             out.write(all_args.model_dump_json(indent=2, exclude={'exec_params'}))
 
-        self.logger.info(f'User count and all args dump done | processing_time: {time() - proc_time:.2}s')
-        self.logger.info(f'Total processing time: {sum((proc_time, req_total_proc_time, usr_total_proc_time))}')
+        other_proc_time = time() - proc_time
+        self.logger.info(f'User count and all args dump done | processing_time: {other_proc_time:.2}s')
+        self.logger.info(f'Total processing time: {sum((other_proc_time, req_total_proc_time, usr_total_proc_time)):.2}s')
 
 
 if __name__ == '__main__':

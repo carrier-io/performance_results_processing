@@ -1,6 +1,8 @@
 import datetime
 import json
 import operator
+from math import floor, ceil
+
 import requests
 import csv
 from influxdb import InfluxDBClient
@@ -53,8 +55,8 @@ class DataManager():
         self.token = args["token"]
         self.build_id = args['build_id']
         self.project_id = args['project_id']
-        self.start_time = datetime.datetime.fromisoformat(args['start_time'].strip('Z')).timestamp()
-        self.end_time = datetime.datetime.fromisoformat(args['end_time'].strip('Z')).timestamp()
+        self.start_time = args['start_time']
+        self.end_time = args['end_time']
         self.last_build_data = None
         self.s3_config = s3_config
         self.headers = {'Authorization': f'bearer {args["token"]}'} if args["token"] else {}

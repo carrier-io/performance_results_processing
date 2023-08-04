@@ -13,6 +13,10 @@ from models import CollectorConfig, TestData, InfluxQueries, TestStatus, AllArgs
 from utils import build_api_url, get_loki_logger
 
 
+class TestStuck(Exception):
+    ...
+
+
 class Collector:
     def __init__(self, config: CollectorConfig | dict | None = None):
         if config:
@@ -57,7 +61,7 @@ class Collector:
         self.requests_start_time = None
         self.requests_end_time = None
         if self.config.debug:
-            self.logger.info(f'Config:\n{self.config.model_dump_json(indent=2)}')
+            self.logger.info(f'Config:\n{self.config.model_dump()}')
 
     def _fetch_test_data(self) -> TestData:
         url = '/'.join(map(str, [
@@ -199,6 +203,8 @@ class Collector:
                     if empty_attempts >= self.config.max_empty_attempts:
                         if not self.test_status.test_finished:
                             self.logger.info('Collecting requests: Exceeded max attempts. Assuming test is stuck')
+                            raise TestStuck()
+
                         self.logger.info('Collecting requests: Done')
                         stop_collection = True
                     else:
@@ -228,7 +234,7 @@ class Collector:
             'time>': 0
         }
         empty_attempts = 0
-        sleep_time = self.config.iteration_sleep + self.config.iteration_sleep // 2  # task delay
+        sleep_time = self.config.iteration_sleep + 5  # task delay
         stop_collection = False
         while not stop_collection:
             self.logger.info(f'Collecting users: Sleeping: {sleep_time}')
@@ -249,6 +255,7 @@ class Collector:
                     if empty_attempts >= self.config.max_empty_attempts:
                         if not self.test_status.test_finished:
                             self.logger.info('Collecting users: Exceeded max attempts. Assuming test is stuck')
+                            raise TestStuck()
                         self.logger.info('Collecting users: Done')
                         stop_collection = True
                     else:
@@ -285,7 +292,12 @@ class Collector:
         requests_task = asyncio.Task(self.collect_requests(client))
         users_task = asyncio.Task(self.collect_users(client))
 
-        await asyncio.gather(requests_task, users_task)
+        try:
+            await asyncio.gather(requests_task, users_task)
+        except TestStuck:
+            self.logger.error('Test seems to be stuck. Exiting...')
+            exit(32)
+
         req_total_rows, req_total_proc_time = requests_task.result()
         self.logger.info(f'Requests start time: {self.requests_start_time}')
         self.logger.info(f'Requests end time: {self.requests_end_time}')

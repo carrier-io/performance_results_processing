@@ -217,7 +217,9 @@ class DataManager():
         fields = "time,system,user,softirq,iowait,host"
         self.client.switch_database(self.args['influxdb_telegraf'])
         for each in ["1s", "5s", "30s", "1m", "5m", "10m"]:
-            _results = self.client.query(SELECT_HEALTH_CPU.format(self.build_id, self.start_time, self.end_time, each))
+            q = SELECT_HEALTH_CPU.format(self.build_id, self.start_time, self.end_time, each)
+            self.logger.info(f'Q {q}')
+            _results = self.client.query(q)
             with open(f"/tmp/health_cpu_{self.build_id}_{each}.csv", "w", newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fields.split(','))
                 writer.writeheader()
@@ -231,7 +233,9 @@ class DataManager():
     def send_engine_health_memory(self):
         fields = "time,heap memory,non-heap memory,host"
         self.client.switch_database(self.args['influxdb_telegraf'])
-        _results = self.client.query(SELECT_HEALTH_MEMORY.format(self.build_id, self.start_time, self.end_time))
+        q = SELECT_HEALTH_MEMORY.format(self.build_id, self.start_time, self.end_time)
+        self.logger.info(f'Q {q}')
+        _results = self.client.query(q)
         with open(f"/tmp/health_memory_{self.build_id}.csv", "w", newline='') as f:
             writer = csv.DictWriter(f, fieldnames=fields.split(','))
             writer.writeheader()
@@ -246,7 +250,9 @@ class DataManager():
         fields = "time,load1,load5,load15,host"
         self.client.switch_database(self.args['influxdb_telegraf'])
         for each in ["1s", "5s", "30s", "1m", "5m", "10m"]:
-            _results = self.client.query(SELECT_HEALTH_LOAD.format(self.build_id, self.start_time, self.end_time, each))
+            q = SELECT_HEALTH_LOAD.format(self.build_id, self.start_time, self.end_time, each)
+            self.logger.info(f'Q {q}')
+            _results = self.client.query(q)
             with open(f"/tmp/health_load_{self.build_id}_{each}.csv", "w", newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fields.split(','))
                 writer.writeheader()

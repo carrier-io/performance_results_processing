@@ -118,7 +118,7 @@ class CollectorConfig(BaseModel):
             'manual_run', 'max_empty_attempts',
             'influx_query_limit', 'iteration_sleep',
             'test_status_update_interval', 'logger_hostname',
-            'logger_stop_words', 'debug'
+            'logger_stop_words', 'debug', 'output_path'
         } if i in environ}
         return cls(**env_dict)
 
@@ -134,7 +134,6 @@ class CollectorConfig(BaseModel):
     token: str
     report_id: int
     exec_params: ExecParams
-    manual_run: bool = False
     max_empty_attempts: int = 10
     influx_query_limit: int = 500000
     iteration_sleep: int = 60
@@ -142,17 +141,23 @@ class CollectorConfig(BaseModel):
     output_path: Path | str = Path('/', 'tmp')
     logger_hostname: str = 'post-processor'
     logger_stop_words: list | set | tuple = tuple()
+    manual_run: bool = False
     debug: bool = False
 
-    @model_validator(mode='before')
+    @field_validator('output_path')
     @classmethod
-    def set_manual_run_constants(cls, data: dict) -> dict:
-        if data.get('manual_run'):
-            data['max_empty_attempts'] = data.get('max_empty_attempts', 0)
-            data['iteration_sleep'] = data.get('iteration_sleep', 0)
-        if isinstance(data.get('output_path'), str):
-            data['output_path'] = Path(data['output_path'])
-        return data
+    def format_output_path(cls, value: str | Path) -> Path:
+        if isinstance(value, str):
+            return Path(value)
+        return value
+
+    @field_validator('manual_run', mode='after')
+    @classmethod
+    def set_manual_run_constants(cls, value: bool, info) -> bool:
+        if value:
+            info.data['max_empty_attempts'] = 0
+            info.data['iteration_sleep'] = 0
+        return value
 
     @field_validator('base_url')
     @classmethod

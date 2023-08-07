@@ -111,7 +111,7 @@ class DataManager():
         import gzip
         import shutil
         with open(filename, 'rb') as f_in:
-            with gzip.open(f"{filename}.gz", 'wb') as f_out:
+            with gzip.open(f"{filename}.gz", 'wb+') as f_out:
                 shutil.copyfileobj(f_in, f_out)
 
                 f_out.seek(0)

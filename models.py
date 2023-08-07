@@ -137,7 +137,7 @@ class CollectorConfig(BaseModel):
     max_empty_attempts: int = 10
     influx_query_limit: int = 500000
     iteration_sleep: int = 60
-    test_status_update_interval: int = 60
+    test_status_update_interval: int = 45
     output_path: Path | str = Path('/', 'tmp')
     logger_hostname: str = 'post-processor'
     logger_stop_words: list | set | tuple = tuple()

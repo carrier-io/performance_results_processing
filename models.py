@@ -18,6 +18,7 @@ class TestStatuses(StrEnum):
     FINISHED = 'finished'
     POST_PROCESSING = 'post processing'
     POST_PROCESSING_MANUAL = 'post processing (manual)'
+    ERROR = 'error'
 
 
 class TestStatus(BaseModel):

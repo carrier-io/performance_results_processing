@@ -296,6 +296,12 @@ class Collector:
             await asyncio.gather(requests_task, users_task)
         except TestStuck:
             self.logger.error('Test seems to be stuck. Exiting...')
+            error_status = TestStatus(
+                status=TestStatuses.ERROR,
+                percentage=100,
+                description=f'Test failed after not receiving any data for {self.config.iteration_sleep * self.config.max_empty_attempts}s. Assuming test is stuck'
+            )
+            self.set_test_status(error_status)
             exit(32)
 
         req_total_rows, req_total_proc_time = requests_task.result()
@@ -322,7 +328,9 @@ class Collector:
 
         other_proc_time = time() - proc_time
         self.logger.info(f'User count and all args dump done | processing_time: {other_proc_time:.2}s')
-        self.logger.info(f'Total processing time: {sum((other_proc_time, req_total_proc_time, usr_total_proc_time)):.2}s')
+        self.logger.info(
+            f'Total processing time: {sum((other_proc_time, req_total_proc_time, usr_total_proc_time)):.2}s'
+        )
 
 
 if __name__ == '__main__':

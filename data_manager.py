@@ -55,8 +55,8 @@ class DataManager():
         self.token = args["token"]
         self.build_id = args['build_id']
         self.project_id = args['project_id']
-        self.start_time = datetime.datetime.fromisoformat(args['start_time']).isoformat(timespec='seconds')
-        self.end_time = datetime.datetime.fromisoformat(args['end_time']).isoformat(timespec='seconds')
+        self.start_time = datetime.datetime.fromisoformat(args['start_time']).isoformat(timespec='seconds') + 'Z'
+        self.end_time = datetime.datetime.fromisoformat(args['end_time']).isoformat(timespec='seconds') + 'Z'
         self.last_build_data = None
         self.s3_config = s3_config
         self.headers = {'Authorization': f'bearer {args["token"]}'} if args["token"] else {}

@@ -1,9 +1,8 @@
 #!/bin/bash
 
-echo "Started"
+set -e
 
-#source venv/bin/activate
-#echo "Venv activated"
+echo "Started"
 python -V
 
 echo "Start results_collector"

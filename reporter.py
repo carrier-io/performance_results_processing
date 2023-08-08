@@ -6,11 +6,12 @@ import requests
 from os import environ
 from traceback import format_exc
 
-from centry_loki import log_loki
 from data_manager import DataManager
 from perfreporter.base_reporter import Reporter
 from perfreporter.junit_reporter import JUnitReporter
 from perfreporter.email_reporter import EmailReporter
+
+from utils import get_loki_logger
 
 
 def finish_test_report(args, response_times, test_status):
@@ -18,8 +19,8 @@ def finish_test_report(args, response_times, test_status):
         'Authorization': f'bearer {args["token"]}',
         'Content-type': 'application/json'
     }
-    lg_type = args["influx_db"].split("_")[0] if "_" in args["influx_db"] else args["influx_db"]
-    data = {'build_id': args["build_id"], 'test_name': args["simulation"], 'lg_type': lg_type,
+    lg_type = args["influxdb_database"].split("_")[0] if "_" in args["influxdb_database"] else args["influxdb_database"]
+    data = {'build_id': args["build_id"], 'test_name': args["name"], 'lg_type': lg_type,
             'missed': int(0),
             'test_status': test_status,
             'vusers': args["users"],
@@ -81,7 +82,7 @@ def reporting_junit(data_manager, args, current_test_results, aggregated_test_da
     headers = {'Authorization': f'bearer {args["token"]}'} if args["token"] else {}
     logger.info('Start reporting to JUnit')
     try:
-        results_bucket = args['simulation'].replace("_", "").lower()
+        results_bucket = args['name'].replace("_", "").lower()
         _, _, thresholds, _ = data_manager.compare_with_thresholds(current_test_results, aggregated_test_data, 
                                                                    quality_gate_config, True)
         report = JUnitReporter.create_report(thresholds, args['build_id'], all_checks, reasons_to_fail_report)
@@ -121,13 +122,13 @@ def reporting(data_manager, args, aggregated_test_data, integrations, quality_ga
                 logger.info('report_missed_thresholds is done')
 
 
-def get_loki_logger(args):
-    loki_context = {"url": f"http://{args['influx_host']}:3100/loki/api/v1/push",
-                    "hostname": "post-processor", 
-                    "labels": {"build_id": args['build_id'],
-                               "project": args['project_id'],
-                               "report_id": args['report_id']}}
-    return log_loki.get_logger(loki_context)
+# def get_loki_logger(args):
+#     loki_context = {"url": f"http://{args['loki_host']}:{args['loki_port']}/loki/api/v1/push",
+#                     "hostname": "post-processor",
+#                     "labels": {"build_id": args['build_id'],
+#                                "project": args['project_id'],
+#                                "report_id": args['report_id']}}
+#     return log_loki.get_logger(loki_context)
 
 
 if __name__ == '__main__':
@@ -137,7 +138,7 @@ if __name__ == '__main__':
     s3_config = integrations.get('system', {}).get('s3_integration', {})
     
     args = DataManager.get_args()
-    logger = get_loki_logger(args)
+    logger = get_loki_logger(**args)
     data_manager = DataManager(args, s3_config, logger)
     total_checked_thresholds, performance_degradation_rate, missed_threshold_rate = 0, 0, 0
     compare_baseline_summary, compare_baseline_per_request = [], []
@@ -151,21 +152,25 @@ if __name__ == '__main__':
         except Exception as e:
             logger.error("Failed to send_engine_health_cpu")
             logger.error(e)
+            logger.error(format_exc())
         try:
             data_manager.send_engine_health_memory()
         except Exception as e:
             logger.error("Failed to send_engine_health_memory")
             logger.error(e)
+            logger.error(format_exc())
         try:
             data_manager.send_engine_health_load()
         except Exception as e:
             logger.error("Failed to send_engine_health_load")
             logger.error(e)
+            logger.error(format_exc())
         try:
             data_manager.send_loki_errors()
         except Exception as e:
             logger.error("Failed to send_loki_errors")
             logger.error(e)
+            logger.error(format_exc())
 
         logger.info('Compare with baseline')
         try:

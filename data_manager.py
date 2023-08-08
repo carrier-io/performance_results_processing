@@ -1,11 +1,13 @@
 import datetime
+import json
 import operator
+from math import floor, ceil
+
 import requests
 import csv
 from influxdb import InfluxDBClient
-from os import environ
-from json import loads
 
+from utils import build_api_url
 
 DELETE_TEST_DATA = "delete from {} where build_id='{}'"
 DELETE_USERS_DATA = "delete from \"users\" where build_id='{}'"
@@ -52,10 +54,10 @@ class DataManager():
         self.args = args
         self.base_url = args['base_url']
         self.token = args["token"]
-        self.build_id = self.args['build_id']
+        self.build_id = args['build_id']
         self.project_id = args['project_id']
-        self.start_time = self.args['start_time']
-        self.end_time = self.args['end_time']
+        self.start_time = datetime.datetime.fromisoformat(args['start_time']).isoformat(timespec='seconds') + 'Z'
+        self.end_time = datetime.datetime.fromisoformat(args['end_time']).isoformat(timespec='seconds') + 'Z'
         self.last_build_data = None
         self.s3_config = s3_config
         self.headers = {'Authorization': f'bearer {args["token"]}'} if args["token"] else {}
@@ -63,21 +65,20 @@ class DataManager():
         self.client = self._get_client()
 
     def _get_client(self):
-        return InfluxDBClient(host=self.args["influx_host"],
-                              port=self.args['influx_port'],
-                              username=self.args['influx_user'],
-                              password=self.args['influx_password'])
+        return InfluxDBClient(host=self.args["influxdb_host"],
+                              port=self.args['influxdb_port'],
+                              username=self.args['influxdb_user'],
+                              password=self.args['influxdb_password'])
 
     def delete_test_data(self):
-        self.client.switch_database(self.args['influx_db'])
-        self.client.query(DELETE_TEST_DATA.format(self.args["simulation"], self.build_id))
+        self.client.switch_database(self.args['influxdb_database'])
+        self.client.query(DELETE_TEST_DATA.format(self.args["name"], self.build_id))
         self.client.query(DELETE_USERS_DATA.format(self.args["build_id"]))
         self.logger.info("Test data were deleted")
 
     @staticmethod
-    def get_args():
-        with open("/tmp/args.json", "r") as f:
-            return loads(f.read())
+    def get_args(json_path: str = '/tmp/args.json') -> dict:
+        return json.load(open(json_path, "r"))
 
     @staticmethod
     def get_response_times():
@@ -101,25 +102,27 @@ class DataManager():
 
     def get_baseline(self):
         baseline_url = f"{self.base_url}/api/v1/backend_performance/baseline/{self.project_id}?" \
-                    f"test_name={self.args['simulation']}&env={self.args['env']}"
+                       f"test_name={self.args['name']}&env={self.args['environment']}"
         res = requests.get(baseline_url, headers={**self.headers, 'Content-type': 'application/json'}).json()
         return res["baseline"]
 
-    def upload_test_results(self, filename):
-        bucket = self.args['simulation'].replace("_", "").lower()
+    def upload_test_results(self, filename: str):
+        bucket = self.args['name'].replace("_", "").lower()
         import gzip
         import shutil
         with open(filename, 'rb') as f_in:
             with gzip.open(f"{filename}.gz", 'wb') as f_out:
                 shutil.copyfileobj(f_in, f_out)
-        self._upload_file(f"{filename}.gz", bucket=bucket)
 
-    def _upload_file(self, file_name, bucket="reports"):
-        file = {'file': open(f"{file_name}", 'rb')}
+        api_url = build_api_url('artifacts', 'artifacts', trailing_slash=True)
         try:
-            requests.post(f"{self.base_url}/api/v1/artifacts/artifacts/{self.project_id}/{bucket}",
-                          params=self.s3_config, files=file, allow_redirects=True, 
-                          headers={'Authorization': f"Bearer {self.token}"})
+            requests.post(
+                f'{self.base_url}{api_url}{self.project_id}/{bucket}',
+                params=self.s3_config,
+                headers={'Authorization': f'Bearer {self.token}'},
+                files={'file': open(f'{filename}.gz', 'rb')},
+                allow_redirects=True,
+            )
         except Exception as e:
             self.logger.error(e)
 
@@ -129,8 +132,8 @@ class DataManager():
             influx_record = {
                 "measurement": "api_comparison",
                 "tags": {
-                    "simulation": self.args['simulation'],
-                    "env": self.args['env'],
+                    "simulation": self.args['name'],
+                    "env": self.args['environment'],
                     "users": self.args["users"],
                     "test_type": self.args['type'],
                     "build_id": self.build_id,
@@ -164,45 +167,47 @@ class DataManager():
 
         # Summary
         error_count = sum(point['fields']['ko'] for point in points)
-        points.append({"measurement": "api_comparison", "tags": {"simulation": self.args['simulation'],
-                                                                "env": self.args['env'],
-                                                                "users": self.args["users"],
-                                                                "test_type": self.args['type'],
-                                                                "duration": self.args['duration'],
-                                                                "build_id": self.build_id,
-                                                                "request_name": "All",
-                                                                "method": "All"
-                                                                },
+        points.append({"measurement": "api_comparison", "tags": {"simulation": self.args['name'],
+                                                                 "env": self.args['environment'],
+                                                                 "users": self.args["users"],
+                                                                 "test_type": self.args['type'],
+                                                                 "duration": self.args['duration'],
+                                                                 "build_id": self.build_id,
+                                                                 "request_name": "All",
+                                                                 "method": "All"
+                                                                 },
                        "time": datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%dT%H:%M:%SZ'),
-                       "fields": {"throughput": round(float(self.args['total_requests_count']) / float(self.args['duration']), 3),
-                                  "total": int(self.args['total_requests_count']),
-                                  "ok": sum(point['fields']['ok'] for point in points),
-                                  "ko": error_count,
-                                  "1xx": sum(point['fields']['1xx'] for point in points),
-                                  "2xx": sum(point['fields']['2xx'] for point in points),
-                                  "3xx": sum(point['fields']['3xx'] for point in points),
-                                  "4xx": sum(point['fields']['4xx'] for point in points),
-                                  "5xx": sum(point['fields']['5xx'] for point in points),
-                                  "NaN": sum(point['fields']['NaN'] for point in points),
-                                  "min": float(response_times["min"]),
-                                  "max": float(response_times["max"]),
-                                  "mean": float(response_times["mean"]),
-                                  "pct50": response_times["pct50"],
-                                  "pct75": response_times["pct75"],
-                                  "pct90": response_times["pct90"],
-                                  "pct95": response_times["pct95"],
-                                  "pct99": response_times["pct99"]}})
-        self.client.switch_database(self.args['comparison_db'])
+                       "fields": {
+                           "throughput": round(float(self.args['total_requests_count']) / float(self.args['duration']),
+                                               3),
+                           "total": int(self.args['total_requests_count']),
+                           "ok": sum(point['fields']['ok'] for point in points),
+                           "ko": error_count,
+                           "1xx": sum(point['fields']['1xx'] for point in points),
+                           "2xx": sum(point['fields']['2xx'] for point in points),
+                           "3xx": sum(point['fields']['3xx'] for point in points),
+                           "4xx": sum(point['fields']['4xx'] for point in points),
+                           "5xx": sum(point['fields']['5xx'] for point in points),
+                           "NaN": sum(point['fields']['NaN'] for point in points),
+                           "min": float(response_times["min"]),
+                           "max": float(response_times["max"]),
+                           "mean": float(response_times["mean"]),
+                           "pct50": response_times["pct50"],
+                           "pct75": response_times["pct75"],
+                           "pct90": response_times["pct90"],
+                           "pct95": response_times["pct95"],
+                           "pct99": response_times["pct99"]}})
+        self.client.switch_database(self.args['influxdb_comparison'])
         try:
             self.client.write_points(points)
         except Exception as e:
             self.logger.error(e)
-            self.logger.error(f'Failed connection to {self.args["influx_host"]}, database - comparison')
+            self.logger.error(f'Failed connection to {self.args["influxdb_host"]}, database - comparison')
 
         # Send comparison data to minio
         fields = ['time', '1xx', '2xx', '3xx', '4xx', '5xx', 'NaN', 'build_id', 'duration',
-                'env', 'ko', 'max', 'mean', 'method', 'min', 'ok', 'pct50', 'pct75', 'pct90',
-                'pct95', 'pct99', 'request_name', 'simulation', 'test_type', 'throughput', 'total', 'users']
+                  'env', 'ko', 'max', 'mean', 'method', 'min', 'ok', 'pct50', 'pct75', 'pct90',
+                  'pct95', 'pct99', 'request_name', 'simulation', 'test_type', 'throughput', 'total', 'users']
 
         res = list(self.client.query(SELECT_LAST_BUILD_DATA.format(self.build_id)).get_points())
         with open(f"/tmp/summary_table_{self.build_id}.csv", "w", newline='') as csvfile:
@@ -215,9 +220,12 @@ class DataManager():
 
     def send_engine_health_cpu(self):
         fields = "time,system,user,softirq,iowait,host"
-        self.client.switch_database(self.args['telegraf_db'])
+        self.client.switch_database(self.args['influxdb_telegraf'])
         for each in ["1s", "5s", "30s", "1m", "5m", "10m"]:
-            _results = self.client.query(SELECT_HEALTH_CPU.format(self.build_id, self.start_time, self.end_time, each))
+            q = SELECT_HEALTH_CPU.format(self.build_id, self.start_time, self.end_time, each)
+            if self.args.get('debug'):
+                self.logger.info(f'Querying influx: {q}')
+            _results = self.client.query(q)
             with open(f"/tmp/health_cpu_{self.build_id}_{each}.csv", "w", newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fields.split(','))
                 writer.writeheader()
@@ -225,13 +233,16 @@ class DataManager():
                     for line in series:
                         writer.writerow({**line, **groups})
             self.upload_test_results(f"/tmp/health_cpu_{self.build_id}_{each}.csv")
-        self.client.switch_database(self.args['influx_db'])
-        print("********engine_health_cpu done")
+        self.client.switch_database(self.args['influxdb_database'])
+        self.logger.info("engine_health_cpu: done")
 
     def send_engine_health_memory(self):
         fields = "time,heap memory,non-heap memory,host"
-        self.client.switch_database(self.args['telegraf_db'])
-        _results = self.client.query(SELECT_HEALTH_MEMORY.format(self.build_id, self.start_time, self.end_time))
+        self.client.switch_database(self.args['influxdb_telegraf'])
+        q = SELECT_HEALTH_MEMORY.format(self.build_id, self.start_time, self.end_time)
+        if self.args.get('debug'):
+            self.logger.info(f'Querying influx: {q}')
+        _results = self.client.query(q)
         with open(f"/tmp/health_memory_{self.build_id}.csv", "w", newline='') as f:
             writer = csv.DictWriter(f, fieldnames=fields.split(','))
             writer.writeheader()
@@ -239,14 +250,17 @@ class DataManager():
                 for line in series:
                     writer.writerow({**line, **groups})
         self.upload_test_results(f"/tmp/health_memory_{self.build_id}.csv")
-        self.client.switch_database(self.args['influx_db'])
-        print("********engine_health_memory done")
+        self.client.switch_database(self.args['influxdb_database'])
+        self.logger.info("engine_health_memory: done")
 
     def send_engine_health_load(self):
         fields = "time,load1,load5,load15,host"
-        self.client.switch_database(self.args['telegraf_db'])
+        self.client.switch_database(self.args['influxdb_telegraf'])
         for each in ["1s", "5s", "30s", "1m", "5m", "10m"]:
-            _results = self.client.query(SELECT_HEALTH_LOAD.format(self.build_id, self.start_time, self.end_time, each))
+            q = SELECT_HEALTH_LOAD.format(self.build_id, self.start_time, self.end_time, each)
+            if self.args.get('debug'):
+                self.logger.info(f'Querying influx: {q}')
+            _results = self.client.query(q)
             with open(f"/tmp/health_load_{self.build_id}_{each}.csv", "w", newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fields.split(','))
                 writer.writeheader()
@@ -254,16 +268,15 @@ class DataManager():
                     for line in series:
                         writer.writerow({**line, **groups})
             self.upload_test_results(f"/tmp/health_load_{self.build_id}_{each}.csv")
-        self.client.switch_database(self.args['influx_db'])
-        print("********engine_health_load done")
-
+        self.client.switch_database(self.args['influxdb_database'])
+        self.logger.info("engine_health_load: done")
 
     def send_loki_errors(self):
         url = f"{self.args['loki_host']}:{self.args['loki_port']}/loki/api/v1/query_range"
         data = {
             "direction": "BACKWARD",
             "limit": 5000,
-            "query": '{filename="/tmp/' + self.args['simulation'] + '.log"}',
+            "query": '{filename="/tmp/' + self.args['name'] + '.log"}',
             "start": self.start_time,
             "end": self.end_time
         }
@@ -280,25 +293,26 @@ class DataManager():
                   'Headers',
                   'Response body'
                   ]
-        issues = []
-        for result in results["data"]["result"]:
-            for line in result['values']:
-                issue = {'time': datetime.datetime.fromtimestamp(int(line[0])/1000000000).strftime(t_format)}
-                values = line[1].strip().split("\t")
-                for value in values:
-                    if ": " in value:
-                        k, v = value.split(": ", 1)
-                        if k in fields:
-                            issue[k] = v
-                if 'Error key' in issue.keys():
-                    issues.append(issue)
-        with open(f"/tmp/errors_{self.build_id}.csv", "w", newline='') as csvfile:
+
+        csv_name = f'errors_{self.build_id}.csv'
+        csv_path = f"/tmp/{csv_name}"
+        self.logger.info(f'Got loki errors: {len(results["data"]["result"])}')
+        with open(csv_path, "w", newline='') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fields)
             writer.writeheader()
-            for line in issues:
-                writer.writerow(line)
-        self.upload_test_results(f"/tmp/errors_{self.build_id}.csv")
-        print("loki_errors done")
+            for result in results["data"]["result"]:
+                for line in result['values']:
+                    issue = {'time': datetime.datetime.fromtimestamp(int(line[0]) / 1000000000).strftime(t_format)}
+                    values = line[1].strip().split("\t")
+                    for value in values:
+                        if ": " in value:
+                            k, v = value.split(": ", 1)
+                            if k in fields:
+                                issue[k] = v
+                    if 'Error key' in issue.keys():
+                        writer.writerow(issue)
+        self.logger.info('.csv done; uploading')
+        self.upload_test_results(csv_path)
 
     def compare_with_thresholds(self, test, test_data, quality_gate_config, add_green=False):
         compare_with_thresholds = []
@@ -306,10 +320,10 @@ class DataManager():
         total_violated = 0
         headers = {'Authorization': f'bearer {self.token}'}
         thresholds_url = f"{self.base_url}/api/v1/backend_performance/thresholds/{self.project_id}?" \
-                        f"test={self.args['simulation']}&env={self.args['env']}&order=asc"
+                         f"test={self.args['name']}&env={self.args['environment']}&order=asc"
         _thresholds = requests.get(thresholds_url, headers={**headers, 'Content-type': 'application/json'}).json()
 
-        def compile_violation(request, th, total_checked, total_violated, compare_with_thresholds, 
+        def compile_violation(request, th, total_checked, total_violated, compare_with_thresholds,
                               quality_gate_config, add_green=False):
             color, metric = self._compare_request_and_threhold(request, th, quality_gate_config, is_summary=False)
             if color:
@@ -361,7 +375,7 @@ class DataManager():
         compare_with_globaly_applicable = []
         if globaly_applicable:
             for th in globaly_applicable:
-                compare_with_globaly_applicable = compile_globals(test_data, th, compare_with_globaly_applicable, 
+                compare_with_globaly_applicable = compile_globals(test_data, th, compare_with_globaly_applicable,
                                                                   quality_gate_config)
         violated = 0
         if total_checked:
@@ -380,7 +394,7 @@ class DataManager():
         # if comparison_method(metric, threshold['value']):
         #     return "red", metric
         # return "green", metric
-        
+
         if is_summary:
             quality_gate = quality_gate_config.get("settings", {}).get("summary_results", {})
         else:
@@ -428,49 +442,50 @@ class DataManager():
 
     def compare_with_baseline_summary(self, baseline_summary, current_test_summary, quality_gate_config):
         compare_baseline_summary = []
-        
+
         if quality_gate_config.get("settings", {}).get("summary_results", {}).get("check_error_rate"):
             div_value = quality_gate_config.get("settings", {}).get("summary_results", {}).get("error_rate_deviation")
             baseline_error_rate = round(float(baseline_summary["ko"] / baseline_summary["total"] * 100), 2)
             current_test_error_rate = round(float(current_test_summary["ko"] / current_test_summary["total"] * 100), 2)
             error_rate_div = current_test_error_rate - baseline_error_rate
             if error_rate_div > div_value:
-                _res = {"type": "Baseline error rate", 
-                        "status": "Failed", 
+                _res = {"type": "Baseline error rate",
+                        "status": "Failed",
                         "message": f"Error rate for current test results - {current_test_error_rate}% is higher than error rate for baseline test - {baseline_error_rate}%"
                         }
             else:
-                _res = {"type": "Baseline error rate", 
-                        "status": "Success", 
+                _res = {"type": "Baseline error rate",
+                        "status": "Success",
                         "message": "Error rate for current test results is less or equal to error rate for baseline test"
                         }
             compare_baseline_summary.append(_res)
-            
+
         if quality_gate_config.get("settings", {}).get("summary_results", {}).get("check_throughput"):
             div_value = quality_gate_config.get("settings", {}).get("summary_results", {}).get("throughput_deviation")
             throughput_div = float(baseline_summary["throughput"]) - float(current_test_summary["throughput"])
             if throughput_div > div_value:
-                _res = {"type": "Baseline throughput", 
-                        "status": "Failed", 
+                _res = {"type": "Baseline throughput",
+                        "status": "Failed",
                         "message": f"Throughput for current test results - {current_test_summary['throughput']} req/sec is less baseline - {baseline_summary['throughput']} req/sec"
                         }
             else:
-                _res = {"type": "Baseline throughput", 
-                        "status": "Success", 
-                        "message": "Throughput for current test results is higher or equal to throughput for baseline test"}    
+                _res = {"type": "Baseline throughput",
+                        "status": "Success",
+                        "message": "Throughput for current test results is higher or equal to throughput for baseline test"}
             compare_baseline_summary.append(_res)
 
         comparison_metric = quality_gate_config["baseline"].get('rt_baseline_comparison_metric', 'pct95')
         if quality_gate_config.get("settings", {}).get("summary_results", {}).get("check_response_time"):
-            div_value = quality_gate_config.get("settings", {}).get("summary_results", {}).get("response_time_deviation")
+            div_value = quality_gate_config.get("settings", {}).get("summary_results", {}).get(
+                "response_time_deviation")
             response_time_div = int(current_test_summary[comparison_metric]) - int(baseline_summary[comparison_metric])
             if response_time_div > div_value:
-                _res = {"type": "Baseline response time", 
+                _res = {"type": "Baseline response time",
                         "status": "Failed",
                         "message": f"Response time for current test results by {comparison_metric} - {current_test_summary[comparison_metric]} ms is higher than response time for baseline test - {baseline_summary[comparison_metric]} ms"
                         }
             else:
-                _res = {"type": "Baseline response time", 
+                _res = {"type": "Baseline response time",
                         "status": "Success",
                         "message": f"Response time for current test results by {comparison_metric} is less or equal to response time for baseline test"
                         }
@@ -492,7 +507,8 @@ class DataManager():
                         baseline_error_rate = round(float(_baseline_res["ko"] / _baseline_res["total"] * 100), 2)
                         current_test_error_rate = round(float(_res["ko"] / _res["total"] * 100), 2)
                         error_rate_div = current_test_error_rate - baseline_error_rate
-                        div_value = quality_gate_config.get("settings", {}).get("per_request_results", {}).get("error_rate_deviation")
+                        div_value = quality_gate_config.get("settings", {}).get("per_request_results", {}).get(
+                            "error_rate_deviation")
                         if error_rate_div > div_value:
                             failed += 1
                             compare_baseline_per_request_details.append({"request_name": _res['request_name'],
@@ -500,10 +516,11 @@ class DataManager():
                                                                          "metric": current_test_error_rate,
                                                                          "baseline": baseline_error_rate
                                                                          })
-                            
+
                     if quality_gate_config.get("settings", {}).get("per_request_results", {}).get("check_throughput"):
                         total_checks += 1
-                        div_value = quality_gate_config.get("settings", {}).get("summary_results", {}).get("throughput_deviation")
+                        div_value = quality_gate_config.get("settings", {}).get("summary_results", {}).get(
+                            "throughput_deviation")
                         throughput_div = float(_baseline_res["throughput"]) - float(_res["throughput"])
                         if throughput_div > div_value:
                             failed += 1
@@ -512,10 +529,12 @@ class DataManager():
                                                                          "metric": _res["throughput"],
                                                                          "baseline": _baseline_res["throughput"]
                                                                          })
-                            
-                    if quality_gate_config.get("settings", {}).get("per_request_results", {}).get("check_response_time"):
+
+                    if quality_gate_config.get("settings", {}).get("per_request_results", {}).get(
+                            "check_response_time"):
                         total_checks += 1
-                        div_value = quality_gate_config.get("settings", {}).get("per_request_results", {}).get("response_time_deviation")
+                        div_value = quality_gate_config.get("settings", {}).get("per_request_results", {}).get(
+                            "response_time_deviation")
                         response_time_div = int(_res[comparison_metric]) - int(_baseline_res[comparison_metric])
                         if response_time_div > div_value:
                             failed += 1
@@ -526,16 +545,17 @@ class DataManager():
                                                                          })
 
         failed_requests_rate = round(float(failed / total_checks * 100), 2)
-        qg_failed_requests_rate = quality_gate_config.get("settings", {}).get("per_request_results", {}).get("percentage_of_failed_requests", 20)
+        qg_failed_requests_rate = quality_gate_config.get("settings", {}).get("per_request_results", {}).get(
+            "percentage_of_failed_requests", 20)
         if failed_requests_rate > qg_failed_requests_rate:
             compare_baseline_per_request.append(
-                {"type": "Baseline compare per request", 
+                {"type": "Baseline compare per request",
                  "status": "Failed",
                  "message": f"Percentage of failed requests compare to baseline is more than {qg_failed_requests_rate}%"
                  })
         else:
             compare_baseline_per_request.append(
-                {"type": "Baseline compare per request", 
+                {"type": "Baseline compare per request",
                  "status": "Success",
                  "message": f"Percentage of failed requests compare to baseline is less than {qg_failed_requests_rate}%"
                  })

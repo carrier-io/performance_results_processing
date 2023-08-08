@@ -111,21 +111,20 @@ class DataManager():
         import gzip
         import shutil
         with open(filename, 'rb') as f_in:
-            with gzip.open(f"{filename}.gz", 'wb+') as f_out:
+            with gzip.open(f"{filename}.gz", 'wb') as f_out:
                 shutil.copyfileobj(f_in, f_out)
 
-                f_out.seek(0)
-                api_url = build_api_url('artifacts', 'artifacts', trailing_slash=True)
-                try:
-                    requests.post(
-                        f"{self.base_url}{api_url}{self.project_id}/{bucket}",
-                        params=self.s3_config,
-                        headers={'Authorization': f"Bearer {self.token}"},
-                        files={'file': f_out},
-                        allow_redirects=True,
-                    )
-                except Exception as e:
-                    self.logger.error(e)
+        api_url = build_api_url('artifacts', 'artifacts', trailing_slash=True)
+        try:
+            requests.post(
+                f'{self.base_url}{api_url}{self.project_id}/{bucket}',
+                params=self.s3_config,
+                headers={'Authorization': f'Bearer {self.token}'},
+                files={'file': open(f'{filename}.gz', 'rb')},
+                allow_redirects=True,
+            )
+        except Exception as e:
+            self.logger.error(e)
 
     def send_summary_table_data(self, response_times, comparison_data, timestamp):
         points = []
@@ -224,7 +223,8 @@ class DataManager():
         self.client.switch_database(self.args['influxdb_telegraf'])
         for each in ["1s", "5s", "30s", "1m", "5m", "10m"]:
             q = SELECT_HEALTH_CPU.format(self.build_id, self.start_time, self.end_time, each)
-            self.logger.info(f'Q {q}')
+            if self.args.get('debug'):
+                self.logger.info(f'Querying influx: {q}')
             _results = self.client.query(q)
             with open(f"/tmp/health_cpu_{self.build_id}_{each}.csv", "w", newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fields.split(','))
@@ -234,13 +234,14 @@ class DataManager():
                         writer.writerow({**line, **groups})
             self.upload_test_results(f"/tmp/health_cpu_{self.build_id}_{each}.csv")
         self.client.switch_database(self.args['influxdb_database'])
-        print("********engine_health_cpu done")
+        self.logger.info("engine_health_cpu: done")
 
     def send_engine_health_memory(self):
         fields = "time,heap memory,non-heap memory,host"
         self.client.switch_database(self.args['influxdb_telegraf'])
         q = SELECT_HEALTH_MEMORY.format(self.build_id, self.start_time, self.end_time)
-        self.logger.info(f'Q {q}')
+        if self.args.get('debug'):
+            self.logger.info(f'Querying influx: {q}')
         _results = self.client.query(q)
         with open(f"/tmp/health_memory_{self.build_id}.csv", "w", newline='') as f:
             writer = csv.DictWriter(f, fieldnames=fields.split(','))
@@ -250,14 +251,15 @@ class DataManager():
                     writer.writerow({**line, **groups})
         self.upload_test_results(f"/tmp/health_memory_{self.build_id}.csv")
         self.client.switch_database(self.args['influxdb_database'])
-        print("********engine_health_memory done")
+        self.logger.info("engine_health_memory: done")
 
     def send_engine_health_load(self):
         fields = "time,load1,load5,load15,host"
         self.client.switch_database(self.args['influxdb_telegraf'])
         for each in ["1s", "5s", "30s", "1m", "5m", "10m"]:
             q = SELECT_HEALTH_LOAD.format(self.build_id, self.start_time, self.end_time, each)
-            self.logger.info(f'Q {q}')
+            if self.args.get('debug'):
+                self.logger.info(f'Querying influx: {q}')
             _results = self.client.query(q)
             with open(f"/tmp/health_load_{self.build_id}_{each}.csv", "w", newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fields.split(','))
@@ -267,7 +269,7 @@ class DataManager():
                         writer.writerow({**line, **groups})
             self.upload_test_results(f"/tmp/health_load_{self.build_id}_{each}.csv")
         self.client.switch_database(self.args['influxdb_database'])
-        print("********engine_health_load done")
+        self.logger.info("engine_health_load: done")
 
     def send_loki_errors(self):
         url = f"{self.args['loki_host']}:{self.args['loki_port']}/loki/api/v1/query_range"

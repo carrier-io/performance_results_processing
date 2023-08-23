@@ -1,14 +1,14 @@
 name: Build and push Docker multiarch image
 
 on:
-  push:
-    branches: [ main ]
+#  push:
+#    branches: [ beta-2.0 ]
   #pull_request:
   #  branches: [ main ]
   workflow_dispatch:
     inputs:
         docker_tag:
-          default: "getcarrier/performance_results_processing:latest"
+          default: "getcarrier/performance_results_processing:beta-2.0"
           description: "Docker image name and tag"
           required: true
         platforms:
@@ -42,6 +42,6 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: ${{ inputs.docker_tag || 'getcarrier/performance_results_processing:latest' }}
+          tags: ${{ inputs.docker_tag || 'getcarrier/performance_results_processing:beta-2.0' }}
           builder: ${{ steps.buildx.outputs.name }}
           platforms: ${{ inputs.platforms || 'linux/amd64' }}

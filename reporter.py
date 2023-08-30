@@ -1,6 +1,4 @@
 from json import loads, dumps
-import csv
-import datetime
 from time import time
 import requests
 from os import environ
@@ -98,7 +96,22 @@ def reporting(data_manager, args, aggregated_test_data, integrations, quality_ga
     if integrations and integrations.get("reporters"):
         if "reporter_email" in integrations["reporters"].keys():
             logger.info(f'Reporting to Email')
-            resp = EmailReporter.process_report(args, aggregated_test_data, integrations, quality_gate_config)
+            email_reporter_args = {
+                'base_url': args['base_url'],
+                'token': args['token'],
+                'project_id': args['project_id'],
+                'influx_host': args['influxdb_host'],
+                'influx_port': args['influxdb_port'],
+                'influx_user': args['influxdb_user'],
+                'influx_password': args['influxdb_password'],
+                'influx_db': args['influxdb_database'],
+                'comparison_db': args['influxdb_comparison'],
+                'simulation': args['name'],
+                'type': args['type'],
+                'env': args['environment'],
+                'users': args['users'],
+            }
+            resp = EmailReporter.process_report(email_reporter_args, aggregated_test_data, integrations, quality_gate_config)
             logger.info(resp)
             logger.info('Reporting to Email finished')
         reporters = get_reporters(integrations["reporters"])
@@ -280,6 +293,7 @@ if __name__ == '__main__':
     
     data_manager.upload_test_results(f"/tmp/{args['build_id']}.csv")
     data_manager.upload_test_results(f"/tmp/users_{args['build_id']}.csv")
-    data_manager.delete_test_data()
+    if not args.get('keep_influx_data'):
+        data_manager.delete_test_data()
 
     logger.info(f"Total execution time for reporter: {round(time() - timestamp, 2)} sec")

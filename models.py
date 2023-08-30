@@ -119,7 +119,8 @@ class CollectorConfig(BaseModel):
             'manual_run', 'max_empty_attempts',
             'influx_query_limit', 'iteration_sleep',
             'test_status_update_interval', 'logger_hostname',
-            'logger_stop_words', 'debug', 'output_path'
+            'logger_stop_words', 'debug', 'output_path',
+            'keep_influx_data'
         } if i in environ}
         return cls(**env_dict)
 
@@ -144,6 +145,7 @@ class CollectorConfig(BaseModel):
     logger_stop_words: list | set | tuple = tuple()
     manual_run: bool = False
     debug: bool = False
+    keep_influx_data: bool = False
 
     @field_validator('output_path')
     @classmethod

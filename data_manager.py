@@ -560,7 +560,7 @@ class DataManager():
                  "message": f"Percentage of failed requests compare to baseline is less than {qg_failed_requests_rate}%"
                  })
 
-        return compare_baseline_per_request, compare_baseline_per_request_details
+        return compare_baseline_per_request, compare_baseline_per_request_details, failed_requests_rate
 
     def get_aggregated_errors(self, quality_gate_config):
         aggregated_errors = {}

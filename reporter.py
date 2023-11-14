@@ -39,30 +39,6 @@ def finish_test_report(args, response_times, test_status):
         except:
             logger.info(response.text)
 
-
-# def parse_quality_gate(quality_gate_data: dict) -> dict:
-#     '''Parse QualityGate configuration from integrations.
-#     If any of the values in the dictionary is -1,
-#     then we set the corresponding flag as False.
-#     '''
-#     if not quality_gate_data:
-#         return {}
-#     logger.info("Parsing QualityGate configuration")
-#     try:
-#         return {
-#             'check_functional_errors': quality_gate_data['error_rate'] != -1,
-#             'check_performance_degradation': quality_gate_data['degradation_rate'] != -1,
-#             'check_missed_thresholds': quality_gate_data['missed_thresholds'] != -1,
-#             'error_rate': quality_gate_data['error_rate'],
-#             'performance_degradation_rate': quality_gate_data['degradation_rate'],
-#             'missed_thresholds_rate': quality_gate_data['missed_thresholds'],
-#         }
-#     except Exception as e:
-#         logger.error("Failed to parse QualityGate configuration")
-#         logger.error(e)
-#         return {}
-
-
 def get_reporters(reporters_config) -> list:
     reporters = []
     for reporter in Reporter.__subclasses__():
@@ -110,6 +86,10 @@ def reporting(data_manager, args, aggregated_test_data, integrations, quality_ga
                 'type': args['type'],
                 'env': args['environment'],
                 'users': args['users'],
+                'performance_degradation_rate': args['performance_degradation_rate'],
+                'missed_threshold_rate': args['missed_threshold_rate'],
+                'reasons_to_fail_report': args['reasons_to_fail_report'],
+                'status': args['status']
             }
             resp = EmailReporter.process_report(email_reporter_args, aggregated_test_data, integrations, quality_gate_config)
             logger.info(resp)
@@ -194,9 +174,8 @@ if __name__ == '__main__':
                     baseline_summary = list(filter(lambda req: req['method'] == 'All', baseline))[0]
                     current_test_summary = list(filter(lambda req: req['method'] == 'All', current_test_results))[0]
                     compare_baseline_summary = data_manager.compare_with_baseline_summary(baseline_summary, current_test_summary, quality_gate_config)
-                    compare_baseline_per_request, compare_baseline_per_request_details = data_manager.compare_with_baseline_per_request(
+                    compare_baseline_per_request, compare_baseline_per_request_details, performance_degradation_rate = data_manager.compare_with_baseline_per_request(
                         baseline, current_test_results, quality_gate_config)
-                #performance_degradation_rate, compare_with_baseline = data_manager.compare_with_baseline(baseline, current_test_results)
         except Exception as e:
             logger.error("Failed to compare with baseline")
             logger.error(e)
@@ -277,6 +256,10 @@ if __name__ == '__main__':
         finish_test_report(args, response_times, test_status)
 
         logger.info('Start reporting')
+        args["performance_degradation_rate"] = performance_degradation_rate
+        args["missed_threshold_rate"] = missed_threshold_rate
+        args["reasons_to_fail_report"] = reasons_to_fail_report
+        args["status"] = test_status["status"].lower()
         if quality_gate_config:
             reporting_junit(data_manager, args, current_test_results, aggregated_test_data, 
                             all_checks, reasons_to_fail_report, quality_gate_config, s3_config)

@@ -12,15 +12,13 @@ RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 RUN python -m pip install --upgrade pip
 
-## installing python libraries
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-
 # installing r libraries
 COPY requirements.r .
 RUN Rscript requirements.r
 
+## installing python libraries
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 
 COPY results_processor.R .
 COPY reporter.py .

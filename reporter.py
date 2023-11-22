@@ -261,6 +261,7 @@ if __name__ == '__main__':
         args["reasons_to_fail_report"] = reasons_to_fail_report
         args["status"] = test_status["status"].lower()
         if quality_gate_config:
+            args["comparison_metric"] = quality_gate_config["baseline"].get('rt_baseline_comparison_metric', 'pct95')
             reporting_junit(data_manager, args, current_test_results, aggregated_test_data, 
                             all_checks, reasons_to_fail_report, quality_gate_config, s3_config)
 

@@ -304,6 +304,7 @@ class Collector:
             self.set_test_status(error_status)
             exit(32)
 
+        self.logger.info(f'Test is finished')
         req_total_rows, req_total_proc_time = requests_task.result()
         self.logger.info(f'Requests start time: {self.requests_start_time}')
         self.logger.info(f'Requests end time: {self.requests_end_time}')

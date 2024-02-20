@@ -45,8 +45,6 @@ class TestStatus(BaseModel):
     def test_finalized(self) -> bool:
         return self.status in {
             TestStatuses.FAILED,
-            TestStatuses.CANCELLED,
-            TestStatuses.CANCELED,
             TestStatuses.FINISHED,
         }
 

@@ -99,6 +99,7 @@ class InfluxQueries:
 class ExecParams(BaseModel):
     influxdb_host: str
     influxdb_port: int = 8086
+    influxdb_timeout: int = 10
     influxdb_user: str
     influxdb_password: str
     influxdb_database: str

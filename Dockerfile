@@ -3,9 +3,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt update
 RUN apt upgrade -y
 # RUN apt-get install -y --no-install-recommends git libcurl4-openssl-dev libssl-dev libxml2-dev build-essential libpq-dev python3 python3-pip python3-setuptools python3-dev
-RUN apt install -y git libcurl4-openssl-dev libssl-dev libxml2-dev build-essential libpq-dev python3.11-venv python3-setuptools python3-dev
+RUN apt install -y git libcurl4-openssl-dev libssl-dev libxml2-dev build-essential libpq-dev python3-venv python3-setuptools python3-dev
 WORKDIR /app
 
+# Set up Python virtual environment
 ENV PYTHONUNBUFFERED=1
 ENV VIRTUAL_ENV=/app/venv
 RUN python3 -m venv $VIRTUAL_ENV

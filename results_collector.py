@@ -115,6 +115,7 @@ class Collector:
             port=self.config.exec_params.influxdb_port,
             username=self.config.exec_params.influxdb_user,
             password=self.config.exec_params.influxdb_password,
+            timeout=self.config.exec_params.influxdb_timeout,
             database=self.config.exec_params.influxdb_database
         )
 

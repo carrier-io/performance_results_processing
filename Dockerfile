@@ -13,6 +13,7 @@ RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 RUN python -m pip install --upgrade pip
 
+RUN pip install --upgrade setuptools
 # installing r libraries
 COPY requirements.r .
 RUN Rscript requirements.r

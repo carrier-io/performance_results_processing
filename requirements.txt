@@ -1,3 +1,4 @@
 git+https://github.com/carrier-io/perfreporter.git@updated_pandas
 git+https://github.com/carrier-io/loki_logger.git
 pydantic==2.11.9
+standard-imghdr

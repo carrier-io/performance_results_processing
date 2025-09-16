@@ -291,6 +291,7 @@ class DataManager():
                   'Error message',
                   'Request params',
                   'Headers',
+                  'Request body',
                   'Response body'
                   ]
 

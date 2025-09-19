@@ -273,12 +273,21 @@ class DataManager():
 
     def send_loki_errors(self):
         url = f"{self.args['loki_host']}:{self.args['loki_port']}/loki/api/v1/query_range"
+        # Remove the 'Z' to parse it back into a datetime object
+        end_time_without_z = self.end_time[:-1]
+        end_time_dt = datetime.datetime.fromisoformat(end_time_without_z)
+
+        # Add 2 minutes using timedelta
+        end_time_dt_plus_5_minutes = end_time_dt + datetime.timedelta(minutes=5)
+
+        # Convert back to ISO format with 'Z'
+        end_time_plus_5_minutes = end_time_dt_plus_5_minutes.isoformat(timespec='seconds') + 'Z'
         data = {
             "direction": "BACKWARD",
             "limit": 5000,
             "query": '{filename="/tmp/' + self.args['name'] + '.log"}',
             "start": self.start_time,
-            "end": self.end_time
+            "end": end_time_plus_5_minutes
         }
         results = requests.get(url, params=data, headers={"Content-Type": "application/json"}).json()
         t_format = "%Y-%m-%dT%H:%M:%SZ"

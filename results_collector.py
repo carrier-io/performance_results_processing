@@ -279,12 +279,11 @@ class Collector:
         return total_rows, total_proc_time
 
     def collect_users_count(self, client: InfluxDBClient) -> int:
-        where = ' where ' + self.influx_queries.where({'build_id=': self.config.build_id})
-        query = self.influx_queries.users_count.format(where=where)
-        req_data = client.query(query).get_points()
+        query = f"select max(\"active\") from {self.config.exec_params.influxdb_database}..\"users_1s\" where build_id='{self.config.build_id}'"
+        users_count = list(client.query(query)["users_1s"])[0]["max"]
         try:
-            return int(next(req_data)['sum'])
-        except StopIteration:
+            return int(users_count)
+        except Exception:
             return 0
 
     async def accumulate_data(self) -> None:

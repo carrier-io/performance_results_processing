@@ -141,7 +141,7 @@ class DataManager():
                     "method": req['method'],
                     "duration": self.args['duration']
                 },
-                "time": datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                "time": datetime.datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%dT%H:%M:%SZ'),
                 "fields": {
                     "throughput": round(float(req["total"]) / float(self.args['duration']), 3),
                     "total": int(req["total"]),

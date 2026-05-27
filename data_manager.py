@@ -128,7 +128,10 @@ class DataManager():
 
     def send_summary_table_data(self, response_times, comparison_data, timestamp):
         points = []
+        total_requests = 0
         for req in comparison_data:
+            if req['method'] != "TRANSACTION":
+                total_requests += 1
             influx_record = {
                 "measurement": "api_comparison",
                 "tags": {
@@ -178,9 +181,9 @@ class DataManager():
                                                                  },
                        "time": datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%dT%H:%M:%SZ'),
                        "fields": {
-                           "throughput": round(float(self.args['total_requests_count']) / float(self.args['duration']),
+                           "throughput": round(float(total_requests) / float(self.args['duration']),
                                                3),
-                           "total": int(self.args['total_requests_count']),
+                           "total": int(total_requests),
                            "ok": sum(point['fields']['ok'] for point in points),
                            "ko": error_count,
                            "1xx": sum(point['fields']['1xx'] for point in points),

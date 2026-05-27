@@ -131,7 +131,7 @@ class DataManager():
         total_requests = 0
         for req in comparison_data:
             if req['method'] != "TRANSACTION":
-                total_requests += 1
+                total_requests += int(req["total"])
             influx_record = {
                 "measurement": "api_comparison",
                 "tags": {

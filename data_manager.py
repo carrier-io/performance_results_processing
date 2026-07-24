@@ -103,7 +103,7 @@ class DataManager():
     def get_baseline(self):
         baseline_url = f"{self.base_url}/api/v1/backend_performance/baseline/{self.project_id}?" \
                        f"test_name={self.args['name']}&env={self.args['environment']}"
-        res = requests.get(baseline_url, headers={**self.headers, 'Content-type': 'application/json'}).json()
+        res = requests.get(baseline_url, verify=False, headers={**self.headers, 'Content-type': 'application/json'}).json()
         return res["baseline"]
 
     def upload_test_results(self, filename: str):
@@ -121,6 +121,7 @@ class DataManager():
                 params=self.s3_config,
                 headers={'Authorization': f'Bearer {self.token}'},
                 files={'file': open(f'{filename}.gz', 'rb')},
+                verify=False,
                 allow_redirects=True,
             )
         except Exception as e:
@@ -292,7 +293,7 @@ class DataManager():
             "start": self.start_time,
             "end": end_time_plus_5_minutes
         }
-        results = requests.get(url, params=data, headers={"Content-Type": "application/json"}).json()
+        results = requests.get(url, params=data, verify=False, headers={"Content-Type": "application/json"}).json()
         t_format = "%Y-%m-%dT%H:%M:%SZ"
         fields = ['time',
                   'Error key',
@@ -334,7 +335,7 @@ class DataManager():
         headers = {'Authorization': f'bearer {self.token}'}
         thresholds_url = f"{self.base_url}/api/v1/backend_performance/thresholds/{self.project_id}?" \
                          f"test={self.args['name']}&env={self.args['environment']}&order=asc"
-        _thresholds = requests.get(thresholds_url, headers={**headers, 'Content-type': 'application/json'}).json()
+        _thresholds = requests.get(thresholds_url, verify=False, headers={**headers, 'Content-type': 'application/json'}).json()
 
         def compile_violation(request, th, total_checked, total_violated, compare_with_thresholds,
                               quality_gate_config, add_green=False):

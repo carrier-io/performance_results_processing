@@ -24,7 +24,7 @@ def finish_test_report(args, response_times, test_status):
             'vusers': args["users"],
             'duration': args['duration'], 'response_times': dumps(response_times)}
     url = f'{args["base_url"]}/api/v1/backend_performance/reports/{args["project_id"]}'
-    r = requests.put(url, json=data, headers=headers)
+    r = requests.put(url, json=data, verify=False, headers=headers)
     logger.info(r.text)
     try:
         if r.json()["message"] == "updated":
@@ -33,7 +33,7 @@ def finish_test_report(args, response_times, test_status):
         logger.error("Failed update report")
         data = {"test_status": {"status": "ERROR", "percentage": 100, "description": "Failed update report"}}
         url = f'{args["base_url"]}/api/v1/backend_performance/report_status/{args["project_id"]}/{args["report_id"]}'
-        response = requests.put(url, json=data, headers=headers)
+        response = requests.put(url, json=data, verify=False, headers=headers)
         try:
             logger.info(response.json()["message"])
         except:
@@ -62,7 +62,7 @@ def reporting_junit(data_manager, args, current_test_results, aggregated_test_da
         report = JUnitReporter.create_report(thresholds, args['build_id'], all_checks, reasons_to_fail_report)
         files = {'file': open(report, 'rb')}
         upload_url = f'{args["base_url"]}/api/v1/artifacts/artifacts/{args["project_id"]}/{results_bucket}'
-        requests.post(upload_url, params=s3_config, allow_redirects=True, files=files, headers=headers)
+        requests.post(upload_url, params=s3_config, allow_redirects=True, verify=False, files=files, headers=headers)
     except Exception as e:
         logger.error("Failed to create junit report")
         logger.error(e)

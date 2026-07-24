@@ -70,7 +70,7 @@ class Collector:
             self.config.project_id
         ]))
         params = {'report_id': self.config.report_id}
-        r = requests.get(url, headers=self.config.api_headers, params=params)
+        r = requests.get(url, headers=self.config.api_headers, verify=False, params=params)
         if not r.ok:
             raise Exception('Could not fetch test params from centry by url: %s' % url)
         return TestData.model_validate(r.json())
@@ -92,6 +92,7 @@ class Collector:
     def _get_test_status(self) -> TestStatus:
         resp = requests.get(
             self.config.report_status_url,
+            verify=False,
             headers=self.config.api_headers
         ).json()
         return TestStatus(status=resp['message'])
@@ -99,6 +100,7 @@ class Collector:
     def set_test_status(self, status: TestStatus) -> TestStatus:
         resp = requests.put(
             self.config.report_status_url,
+            verify=False,
             headers=self.config.api_headers,
             json={"test_status": status.model_dump(exclude_none=True)}
         )

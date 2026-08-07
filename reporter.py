@@ -185,7 +185,7 @@ if __name__ == '__main__':
         compare_with_thresholds, compare_with_globaly_applicable = [], []
         try:
             aggregated_test_data = {
-                'throughput': round(float(args['total_requests_count']) / float(args['duration']), 3),
+                'throughput': round(float(args['total_requests_count']) / float(args['duration']), 3) if float(args['duration']) != 0 else 0.0,
                 'ko': error_count, 'total': args['total_requests_count'], 'request_name': 'all',
                 "min": float(response_times["min"]), "max": float(response_times["max"]),
                 "avg": float(response_times["mean"]), "pct50": response_times["pct50"],
@@ -272,6 +272,11 @@ if __name__ == '__main__':
     except Exception as e:
         logger.error("Failed to update report")
         logger.error(e)
+        error_status = {"status": "ERROR", "percentage": 100, "description": f"Post-processing failed: {e}"}
+        try:
+            finish_test_report(args, {}, error_status)
+        except Exception as finish_exc:
+            logger.error(f"Also failed to set error status: {finish_exc}")
 
     logger.info(f"Finish main processing: {round(time() - timestamp, 2)} sec")
     

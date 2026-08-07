@@ -90,11 +90,15 @@ class Collector:
             exit(32)
 
     def _get_test_status(self) -> TestStatus:
-        resp = requests.get(
+        r = requests.get(
             self.config.report_status_url,
             verify=False,
             headers=self.config.api_headers
-        ).json()
+        )
+        if not r.ok:
+            self.logger.warning(f'Failed to get test status: {r.status_code} {r.text}')
+            return self._test_status
+        resp = r.json()
         return TestStatus(status=resp['message'])
 
     def set_test_status(self, status: TestStatus) -> TestStatus:
@@ -282,8 +286,11 @@ class Collector:
 
     def collect_users_count(self, client: InfluxDBClient) -> int:
         query = f"select max(\"active\") from {self.config.exec_params.influxdb_database}..\"users_1s\" where build_id='{self.config.build_id}'"
-        users_count = list(client.query(query)["users_1s"])[0]["max"]
         try:
+            result = list(client.query(query)["users_1s"])
+            if not result:
+                return 0
+            users_count = result[0]["max"]
             return int(users_count)
         except Exception:
             return 0
@@ -291,8 +298,8 @@ class Collector:
     async def accumulate_data(self) -> None:
         client = self.get_influx_client()
 
-        requests_task = asyncio.Task(self.collect_requests(client))
-        users_task = asyncio.Task(self.collect_users(client))
+        requests_task = asyncio.create_task(self.collect_requests(client))
+        users_task = asyncio.create_task(self.collect_users(client))
 
         try:
             await asyncio.gather(requests_task, users_task)
@@ -305,6 +312,15 @@ class Collector:
             )
             self.set_test_status(error_status)
             exit(32)
+        except Exception as exc:
+            self.logger.error(f'Unexpected error during data collection: {exc}')
+            error_status = TestStatus(
+                status=TestStatuses.ERROR,
+                percentage=100,
+                description=f'Post-processing failed with unexpected error: {exc}'
+            )
+            self.set_test_status(error_status)
+            raise
 
         self.logger.info(f'Test is finished')
         req_total_rows, req_total_proc_time = requests_task.result()
@@ -337,5 +353,14 @@ class Collector:
 
 
 if __name__ == '__main__':
-    collector = Collector()
-    asyncio.run(collector.accumulate_data())
+    try:
+        collector = Collector()
+        asyncio.run(collector.accumulate_data())
+    except SystemExit:
+        raise
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).critical(
+            f'Fatal error in results_collector: {exc}', exc_info=True
+        )
+        exit(1)

@@ -147,7 +147,7 @@ class DataManager():
                 },
                 "time": datetime.datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%dT%H:%M:%SZ'),
                 "fields": {
-                    "throughput": round(float(req["total"]) / float(self.args['duration']), 3),
+                    "throughput": round(float(req["total"]) / float(self.args['duration']), 3) if float(self.args['duration']) != 0 else 0.0,
                     "total": int(req["total"]),
                     "ok": int(req["ok"]),
                     "ko": int(req["ko"]),
@@ -182,8 +182,7 @@ class DataManager():
                                                                  },
                        "time": datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%dT%H:%M:%SZ'),
                        "fields": {
-                           "throughput": round(float(total_requests) / float(self.args['duration']),
-                                               3),
+                           "throughput": round(float(total_requests) / float(self.args['duration']), 3) if float(self.args['duration']) != 0 else 0.0,
                            "total": int(total_requests),
                            "ok": sum(point['fields']['ok'] for point in points),
                            "ko": error_count,
@@ -422,7 +421,7 @@ class DataManager():
             metric = request['throughput']
             div_value = quality_gate.get("throughput_deviation")
         elif quality_gate.get("check_error_rate") and threshold['target'] == 'error_rate':
-            metric = round(float(request['ko'] / request['total']) * 100, 2)
+            metric = round(float(request['ko'] / request['total']) * 100, 2) if request['total'] else 0.0
             div_value = quality_gate.get("error_rate_deviation")
         else:
             return None, None
@@ -459,8 +458,8 @@ class DataManager():
 
         if quality_gate_config.get("settings", {}).get("summary_results", {}).get("check_error_rate"):
             div_value = quality_gate_config.get("settings", {}).get("summary_results", {}).get("error_rate_deviation")
-            baseline_error_rate = round(float(baseline_summary["ko"] / baseline_summary["total"] * 100), 2)
-            current_test_error_rate = round(float(current_test_summary["ko"] / current_test_summary["total"] * 100), 2)
+            baseline_error_rate = round(float(baseline_summary["ko"] / baseline_summary["total"] * 100), 2) if baseline_summary["total"] else 0.0
+            current_test_error_rate = round(float(current_test_summary["ko"] / current_test_summary["total"] * 100), 2) if current_test_summary["total"] else 0.0
             error_rate_div = current_test_error_rate - baseline_error_rate
             if error_rate_div > div_value:
                 _res = {"type": "Baseline error rate",
@@ -518,8 +517,8 @@ class DataManager():
                         _baseline_res['method'] == _res['method']:
                     if quality_gate_config.get("settings", {}).get("per_request_results", {}).get("check_error_rate"):
                         total_checks += 1
-                        baseline_error_rate = round(float(_baseline_res["ko"] / _baseline_res["total"] * 100), 2)
-                        current_test_error_rate = round(float(_res["ko"] / _res["total"] * 100), 2)
+                        baseline_error_rate = round(float(_baseline_res["ko"] / _baseline_res["total"] * 100), 2) if _baseline_res["total"] else 0.0
+                        current_test_error_rate = round(float(_res["ko"] / _res["total"] * 100), 2) if _res["total"] else 0.0
                         error_rate_div = current_test_error_rate - baseline_error_rate
                         div_value = quality_gate_config.get("settings", {}).get("per_request_results", {}).get(
                             "error_rate_deviation")
@@ -558,7 +557,7 @@ class DataManager():
                                                                          "baseline": _baseline_res[comparison_metric]
                                                                          })
 
-        failed_requests_rate = round(float(failed / total_checks * 100), 2)
+        failed_requests_rate = round(float(failed / total_checks * 100), 2) if total_checks else 0.0
         qg_failed_requests_rate = quality_gate_config.get("settings", {}).get("per_request_results", {}).get(
             "percentage_of_failed_requests", 20)
         if failed_requests_rate > qg_failed_requests_rate:

@@ -3,13 +3,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt update
 RUN apt upgrade -y
 # RUN apt-get install -y --no-install-recommends git libcurl4-openssl-dev libssl-dev libxml2-dev build-essential libpq-dev python3 python3-pip python3-setuptools python3-dev
-RUN apt install -y git libcurl4-openssl-dev libssl-dev libxml2-dev build-essential libpq-dev python3-venv python3-setuptools python3-dev
+RUN apt install -y git libcurl4-openssl-dev libssl-dev libxml2-dev build-essential libpq-dev python3-venv python3-setuptools python3-dev python3.12 python3.12-venv python3.12-dev
 WORKDIR /app
 
 # Set up Python virtual environment
 ENV PYTHONUNBUFFERED=1
 ENV VIRTUAL_ENV=/app/venv
-RUN python3 -m venv $VIRTUAL_ENV
+RUN python3.12 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 RUN python -m pip install --upgrade pip
 
@@ -20,7 +20,6 @@ RUN Rscript requirements.r
 
 ## installing python libraries
 COPY requirements.txt .
-ENV PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
 RUN pip install -r requirements.txt
 
 COPY results_processor.R .

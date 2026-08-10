@@ -1,9 +1,15 @@
 FROM r-base:4.3.1
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git libcurl4-openssl-dev libssl-dev libxml2-dev build-essential libpq-dev \
+    gcc-13 g++-13 \
     python3-setuptools python3.13 python3.13-venv python3.13-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Pin R package compilation to GCC 13 to avoid GCC 15 / binutils .base64 assembler
+# incompatibility on ARM64 (Debian trixie ships gcc-15 in build-essential as of 2026-08)
+RUN mkdir -p /root/.R && printf 'CC = gcc-13\nCXX = g++-13\nCXX11 = g++-13\nCXX14 = g++-13\nCXX17 = g++-13\n' > /root/.R/Makevars
+
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1

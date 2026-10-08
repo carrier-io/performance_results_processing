@@ -35,7 +35,15 @@ aggregate_results <- function(original_results_csv, aggregation, aggregation_suf
                    "3xx"=sum(startsWith(as.character(status_code), "3")),
                    "4xx"=sum(startsWith(as.character(status_code), "4")),
                    "5xx"=sum(startsWith(as.character(status_code), "5")),
-                   "NaN"=sum(is.nan(status_code)))
+                   "NaN"=sum(is.nan(status_code))) %>%
+  dplyr::mutate(
+    min    = ifelse(is.finite(min),    min,    0L),
+    max    = ifelse(is.finite(max),    max,    0L),
+    median = ifelse(is.finite(median), median, 0L),
+    pct90  = ifelse(is.finite(pct90),  pct90,  0L),
+    pct95  = ifelse(is.finite(pct95),  pct95,  0L),
+    pct99  = ifelse(is.finite(pct99),  pct99,  0L)
+  )
 
   results = results[,c(5,1,2,3,6,7,8,9,10,11,12,13,14,15,16,17,18)]
   file_name = glue("/tmp/{build_id}_{aggregation_suffix}.csv")
@@ -74,7 +82,17 @@ get_response_times <- function(original_results_csv) {
 				   pct75=as.integer(quantile(response_time, c(.75), na.rm=TRUE)),
 				   pct90=as.integer(quantile(response_time, c(.90), na.rm=TRUE)),
                    pct95=as.integer(quantile(response_time, c(.95), na.rm=TRUE)),
-                   pct99=as.integer(quantile(response_time, c(.99), na.rm=TRUE)))
+                   pct99=as.integer(quantile(response_time, c(.99), na.rm=TRUE))) %>%
+  dplyr::mutate(
+    min   = ifelse(is.finite(min),   min,   0L),
+    max   = ifelse(is.finite(max),   max,   0L),
+    mean  = ifelse(is.finite(mean),  mean,  0L),
+    pct50 = ifelse(is.finite(pct50), pct50, 0L),
+    pct75 = ifelse(is.finite(pct75), pct75, 0L),
+    pct90 = ifelse(is.finite(pct90), pct90, 0L),
+    pct95 = ifelse(is.finite(pct95), pct95, 0L),
+    pct99 = ifelse(is.finite(pct99), pct99, 0L)
+  )
 
   file_name = glue("/tmp/response_times.csv")
   write.csv(results, file_name, row.names = FALSE, fileEncoding = "UTF-8", quote = FALSE, eol = "\n")
@@ -100,7 +118,17 @@ get_comparison_data <- function(original_results_csv) {
                    "3xx"=sum(startsWith(as.character(status_code), "3")),
                    "4xx"=sum(startsWith(as.character(status_code), "4")),
                    "5xx"=sum(startsWith(as.character(status_code), "5")),
-                   "NaN"=sum(is.nan(status_code)))
+                   "NaN"=sum(is.nan(status_code))) %>%
+  dplyr::mutate(
+    min   = ifelse(is.finite(min),   min,   0L),
+    max   = ifelse(is.finite(max),   max,   0L),
+    mean  = ifelse(is.finite(mean),  mean,  0L),
+    pct50 = ifelse(is.finite(pct50), pct50, 0L),
+    pct75 = ifelse(is.finite(pct75), pct75, 0L),
+    pct90 = ifelse(is.finite(pct90), pct90, 0L),
+    pct95 = ifelse(is.finite(pct95), pct95, 0L),
+    pct99 = ifelse(is.finite(pct99), pct99, 0L)
+  )
 
   file_name = glue("/tmp/comparison.csv")
   write.csv(results, file_name, row.names = FALSE, fileEncoding = "UTF-8", quote = FALSE, eol = "\n")

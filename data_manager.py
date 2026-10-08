@@ -9,6 +9,44 @@ from influxdb import InfluxDBClient
 
 from utils import build_api_url
 
+
+def _safe_int_from_csv(val, default=0):
+    """Convert a CSV string to int.
+
+    Returns *default* (0) for values that R writes when an aggregate over an
+    all-NaN group is computed with na.rm=TRUE:
+      - "NA"   — R writes this for as.integer(NaN) and for NA results
+      - "NaN"  — alternative non-finite representation
+      - "Inf"  — R writes this for min() on an all-NaN group
+      - "-Inf" — R writes this for max() on an all-NaN group
+      - ""     — empty cell
+
+    Also returns *default* for any other value that cannot be coerced, rather
+    than raising an exception and crashing the post-processing pipeline.
+    """
+    s = str(val).strip()
+    if s in ("NA", "NaN", "Inf", "-Inf", ""):
+        return default
+    try:
+        return int(float(s))
+    except (ValueError, OverflowError):
+        return default
+
+
+def _safe_float_from_csv(val, default=0.0):
+    """Convert a CSV string to float.
+
+    Mirrors *_safe_int_from_csv*: returns *default* instead of raising for
+    non-finite or missing R values ("NA", "Inf", "-Inf", "NaN", "").
+    """
+    s = str(val).strip()
+    if s in ("NA", "NaN", "Inf", "-Inf", ""):
+        return default
+    try:
+        return float(s)
+    except (ValueError, OverflowError):
+        return default
+
 DELETE_TEST_DATA = "delete from {} where build_id='{}'"
 DELETE_USERS_DATA = "delete from \"users\" where build_id='{}'"
 SELECT_LAST_BUILD_DATA = "select * from api_comparison where build_id=\'{}\'"
@@ -88,7 +126,7 @@ class DataManager():
             values = lines[1].split(",")
             response_times = {}
             for i in range(len(headers)):
-                response_times[headers[i].replace("\n", "")] = int(float(values[i].replace("\n", "")))
+                response_times[headers[i].replace("\n", "")] = _safe_int_from_csv(values[i])
             return response_times
 
     @staticmethod
@@ -157,14 +195,14 @@ class DataManager():
                     "4xx": int(req["4xx"]),
                     "5xx": int(req["5xx"]),
                     "NaN": int(req["NaN"]),
-                    "min": float(req["min"]),
-                    "max": float(req["max"]),
-                    "mean": round(float(req["mean"]), 2),
-                    "pct50": int(req["pct50"]),
-                    "pct75": int(req["pct75"]),
-                    "pct90": int(req["pct90"]),
-                    "pct95": int(req["pct95"]),
-                    "pct99": int(req["pct99"]),
+                    "min": _safe_float_from_csv(req["min"]),
+                    "max": _safe_float_from_csv(req["max"]),
+                    "mean": round(_safe_float_from_csv(req["mean"]), 2),
+                    "pct50": _safe_int_from_csv(req["pct50"]),
+                    "pct75": _safe_int_from_csv(req["pct75"]),
+                    "pct90": _safe_int_from_csv(req["pct90"]),
+                    "pct95": _safe_int_from_csv(req["pct95"]),
+                    "pct99": _safe_int_from_csv(req["pct99"]),
                 }
             }
             points.append(influx_record)

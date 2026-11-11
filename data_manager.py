@@ -207,8 +207,8 @@ class DataManager():
             }
             points.append(influx_record)
 
-        # Summary
-        error_count = sum(point['fields']['ko'] for point in points)
+        # Summary: HTTP requests only (TRANSACTION rows excluded), consistent with total_requests
+        http_points = [point for point in points if point['tags']['method'] != "TRANSACTION"]
         points.append({"measurement": "api_comparison", "tags": {"simulation": self.args['name'],
                                                                  "env": self.args['environment'],
                                                                  "users": self.args["users"],
@@ -222,14 +222,14 @@ class DataManager():
                        "fields": {
                            "throughput": round(float(total_requests) / float(self.args['duration']), 3) if float(self.args['duration']) != 0 else 0.0,
                            "total": int(total_requests),
-                           "ok": sum(point['fields']['ok'] for point in points),
-                           "ko": error_count,
-                           "1xx": sum(point['fields']['1xx'] for point in points),
-                           "2xx": sum(point['fields']['2xx'] for point in points),
-                           "3xx": sum(point['fields']['3xx'] for point in points),
-                           "4xx": sum(point['fields']['4xx'] for point in points),
-                           "5xx": sum(point['fields']['5xx'] for point in points),
-                           "NaN": sum(point['fields']['NaN'] for point in points),
+                           "ok": sum(point['fields']['ok'] for point in http_points),
+                           "ko": sum(point['fields']['ko'] for point in http_points),
+                           "1xx": sum(point['fields']['1xx'] for point in http_points),
+                           "2xx": sum(point['fields']['2xx'] for point in http_points),
+                           "3xx": sum(point['fields']['3xx'] for point in http_points),
+                           "4xx": sum(point['fields']['4xx'] for point in http_points),
+                           "5xx": sum(point['fields']['5xx'] for point in http_points),
+                           "NaN": sum(point['fields']['NaN'] for point in http_points),
                            "min": float(response_times["min"]),
                            "max": float(response_times["max"]),
                            "mean": float(response_times["mean"]),

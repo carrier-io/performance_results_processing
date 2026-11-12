@@ -209,6 +209,7 @@ class DataManager():
 
         # Summary: HTTP requests only (TRANSACTION rows excluded), consistent with total_requests
         http_points = [point for point in points if point['tags']['method'] != "TRANSACTION"]
+        error_count = sum(point['fields']['ko'] for point in http_points)
         points.append({"measurement": "api_comparison", "tags": {"simulation": self.args['name'],
                                                                  "env": self.args['environment'],
                                                                  "users": self.args["users"],
@@ -223,7 +224,7 @@ class DataManager():
                            "throughput": round(float(total_requests) / float(self.args['duration']), 3) if float(self.args['duration']) != 0 else 0.0,
                            "total": int(total_requests),
                            "ok": sum(point['fields']['ok'] for point in http_points),
-                           "ko": sum(point['fields']['ko'] for point in http_points),
+                           "ko": error_count,
                            "1xx": sum(point['fields']['1xx'] for point in http_points),
                            "2xx": sum(point['fields']['2xx'] for point in http_points),
                            "3xx": sum(point['fields']['3xx'] for point in http_points),
